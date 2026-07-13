@@ -1,8 +1,10 @@
 data/
+outputs/
+__pycache__/
+.venv/
 *.zip
 *.tar
 *.tar.gz
 *.h5
 *.pt
 *.pth
-
