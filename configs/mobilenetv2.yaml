@@ -1,0 +1,15 @@
+experiment_name: mobilenetv2
+
+model:
+  name: mobilenetv2
+  pretrained: true
+  image_size: 224
+
+training:
+  epochs: 20
+  batch_size: 32
+  learning_rate: 0.0003
+  weight_decay: 0.0001
+
+output:
+  dir: outputs/mobilenetv2

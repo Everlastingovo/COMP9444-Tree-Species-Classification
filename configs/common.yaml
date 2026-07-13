@@ -1,0 +1,17 @@
+project_name: COMP9444 Tree Species Classification
+seed: 42
+
+dataset:
+  zip_path: data/raw/5061353/leafsnap-dataset-30subset.zip
+  extract_root: data/raw/5061353
+  images_root: data/raw/5061353/leafsnap-dataset-30subset/dataset/images
+  image_source: field
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+training:
+  device: auto
+  num_workers: 0
+
+output:
+  root: outputs
