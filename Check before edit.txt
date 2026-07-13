@@ -1,0 +1,98 @@
+Check before edit
+=================
+
+Please read this file before changing the project structure or Part 1 code.
+
+Current branch/context
+----------------------
+- Current work is for Part 1 / E0 baseline.
+- Research question: without pretrained models, what baseline performance can a custom CNN achieve?
+- The old single-file script has been moved into a cleaner project framework.
+- The root script `part1_custom_cnn.py` is still the easiest entry point, but most implementation now lives under `src/`.
+
+What Part 1 has completed
+-------------------------
+1. Project framework has been created:
+   - `configs/`
+   - `data/`
+   - `notebooks/`
+   - `src/`
+   - `outputs/`
+   - `report/`
+   - `presentation/`
+
+2. Custom CNN baseline has been implemented:
+   - Model: `src/models/baseline_cnn.py`
+   - Dataset loading: `src/data/dataset.py`
+   - Image transforms: `src/data/transforms.py`
+   - Train/val/test split: `src/data/split_dataset.py`
+   - Training loop: `src/training/trainer.py`
+   - Entry point: `part1_custom_cnn.py`
+   - Config: `configs/baseline.yaml`
+
+3. Dataset split and metadata have been generated:
+   - `data/metadata/images.csv`
+   - `data/metadata/class_to_idx.json`
+   - `data/splits/train.csv`
+   - `data/splits/val.csv`
+   - `data/splits/test.csv`
+
+4. Baseline experiment has already been run on CPU:
+   - Image source: field
+   - Classes: 30
+   - Train images: 1447
+   - Validation images: 314
+   - Test images: 314
+   - Best validation accuracy: 66.24%
+   - Test accuracy: 68.47%
+   - Test loss: 1.0337
+   - Runtime: about 17.7 minutes on CPU
+
+Where the Part 1 result is stored locally
+-----------------------------------------
+- Main baseline output folder:
+  `outputs/baseline/`
+
+- Important local result files:
+  `outputs/baseline/summary.json`
+  `outputs/baseline/metrics.csv`
+  `outputs/baseline/dataset_split.csv`
+  `outputs/baseline/class_to_idx.json`
+  `outputs/baseline/best_custom_cnn.pt`
+
+Important GitHub upload rule
+----------------------------
+Do not upload raw dataset files or model checkpoints.
+
+These are intentionally ignored by `.gitignore`:
+- `data/raw/`
+- `outputs/**`
+- `*.zip`
+- `*.pt`
+- `*.pth`
+- `*.h5`
+
+It is okay to upload source code, configs, README files, notebooks, report files, and the small metadata/split CSV files under `data/metadata/` and `data/splits/`.
+
+How to run Part 1 again
+-----------------------
+Install requirements:
+
+`py -3.12 -m pip install -r requirements.txt`
+
+Quick smoke test:
+
+`py -3.12 part1_custom_cnn.py --epochs 1 --max-batches 1 --output-dir outputs/smoke_test`
+
+Full baseline training:
+
+`py -3.12 part1_custom_cnn.py --config configs/baseline.yaml`
+
+Notes for the next editor
+-------------------------
+- Keep `part1_custom_cnn.py` as a simple entry point.
+- Put reusable code inside `src/`, not in the root folder.
+- If you change the split logic, document it clearly because it affects reported accuracy.
+- If you rerun the experiment and get different results, update `PART1_CUSTOM_CNN.md` and this file.
+- Do not commit `outputs/baseline/best_custom_cnn.pt` or the raw dataset.
+

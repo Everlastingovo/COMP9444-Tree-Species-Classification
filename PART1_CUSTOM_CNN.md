@@ -4,7 +4,15 @@ This part answers the E0 research question:
 
 > When no pretrained model is used, what baseline performance can a simple deep learning model achieve?
 
-The implementation in `part1_custom_cnn.py` trains a convolutional neural network from scratch on the Leafsnap subset. It does not load pretrained weights.
+The implementation is organised in the project framework:
+
+- `configs/baseline.yaml`: baseline experiment settings
+- `src/models/baseline_cnn.py`: custom CNN architecture
+- `src/data/`: dataset loading, metadata, and split helpers
+- `src/training/trainer.py`: training loop
+- `part1_custom_cnn.py`: simple command-line entry point
+
+The baseline model does not load pretrained weights.
 
 ## Setup
 
@@ -43,7 +51,7 @@ py -3.12 part1_custom_cnn.py --epochs 20 --batch-size 32 --image-source field
 Outputs are saved under:
 
 ```text
-outputs/part1_custom_cnn/
+outputs/baseline/
 ```
 
 Important output files:
@@ -52,6 +60,28 @@ Important output files:
 - `metrics.csv`: training and validation loss/accuracy per epoch
 - `summary.json`: final result summary, including test accuracy
 - `dataset_split.csv`: reproducible train/validation/test split
+
+The reusable metadata and split files are also written to:
+
+```text
+data/metadata/
+data/splits/
+```
+
+Raw images remain under `data/raw/` and are ignored by Git.
+
+## Current Baseline Result
+
+The first completed CPU run used 30 field-image classes:
+
+```text
+Train images: 1447
+Validation images: 314
+Test images: 314
+Best validation accuracy: 66.24%
+Test accuracy: 68.47%
+Test loss: 1.0337
+```
 
 ## Report Text Draft
 
