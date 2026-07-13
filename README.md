@@ -26,3 +26,20 @@ py -3.12 part1_custom_cnn.py
 The actual implementation now lives under `src/`, with baseline settings in `configs/baseline.yaml`.
 
 See `PART1_CUSTOM_CNN.md` for setup, training commands, and report notes.
+
+## Part 2: Data Preparation and EDA
+
+Part 2 covers dataset metadata preparation, split generation, and exploratory analysis for the Leafsnap 30-subset data.
+
+Key files:
+
+- `part2_prepare_metadata.py` — generate `data/metadata/*` and `data/splits/*`
+- `part2_data_eda.py` — run EDA and save figures under `report/figures/data/`
+- `PART2_DATA.md` — Part 2 handoff summary for next contributors
+
+Run Part 2 scripts with:
+
+```bash
+python3 part2_prepare_metadata.py
+python3 part2_data_eda.py
+```
