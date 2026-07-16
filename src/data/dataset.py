@@ -5,7 +5,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-from src.data.transforms import LeafImageTransform
+from src.data.transforms import LeafImageTransform, Normalization
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
@@ -61,10 +61,16 @@ class LeafDataset(Dataset):
         image_size: int,
         training: bool,
         augment: bool = True,
+        normalization: Normalization = "standard",
     ) -> None:
         self.samples = samples
         self.class_to_idx = class_to_idx
-        self.transform = LeafImageTransform(image_size=image_size, training=training, augment=augment)
+        self.transform = LeafImageTransform(
+            image_size=image_size,
+            training=training,
+            augment=augment,
+            normalization=normalization,
+        )
 
     def __len__(self) -> int:
         return len(self.samples)
