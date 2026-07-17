@@ -1,6 +1,8 @@
 import csv
+import hashlib
 import json
 import zipfile
+from collections import defaultdict
 from pathlib import Path
 
 
@@ -51,6 +53,54 @@ def parse_official_image_list(list_path: Path, dataset_root: Path) -> list[tuple
     return samples
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as image_file:
+        for chunk in iter(lambda: image_file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def deduplicate_samples_by_content(
+    samples: list[tuple[Path, str, str]],
+) -> tuple[
+    list[tuple[Path, str, str, str]],
+    list[tuple[str, Path, str, Path, str, str]],
+    list[tuple[str, Path, str, str]],
+]:
+    """Deduplicate official samples while preserving manifest order.
+
+    The first path in a same-label hash group is the canonical sample. Hash
+    groups containing more than one label are excluded completely and
+    returned for manual audit rather than having a label guessed in code.
+    """
+    groups: dict[str, list[tuple[Path, str, str]]] = defaultdict(list)
+    for image_path, label, source in samples:
+        groups[sha256_file(image_path)].append((image_path, label, source))
+
+    unique_samples: list[tuple[Path, str, str, str]] = []
+    same_class_duplicates: list[tuple[str, Path, str, Path, str, str]] = []
+    conflicting_labels: list[tuple[str, Path, str, str]] = []
+
+    for content_hash, group in groups.items():
+        labels = {label for _, label, _ in group}
+        if len(labels) > 1:
+            conflicting_labels.extend(
+                (content_hash, image_path, label, source)
+                for image_path, label, source in group
+            )
+            continue
+
+        canonical_path, label, canonical_source = group[0]
+        unique_samples.append((canonical_path, label, canonical_source, content_hash))
+        same_class_duplicates.extend(
+            (content_hash, canonical_path, canonical_source, duplicate_path, label, duplicate_source)
+            for duplicate_path, _, duplicate_source in group[1:]
+        )
+
+    return unique_samples, same_class_duplicates, conflicting_labels
+
+
 def write_class_mapping(path: Path, class_to_idx: dict[str, int]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(class_to_idx, indent=2), encoding="utf-8")
@@ -60,7 +110,7 @@ def write_image_metadata(path: Path, samples: list[tuple], class_to_idx: dict[st
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as csv_file:
         if class_to_idx is None:
-            writer = csv.writer(csv_file)
+            writer = csv.writer(csv_file, lineterminator="\n")
             writer.writerow(["path", "label", "source"])
             for item in samples:
                 if len(item) == 3:
@@ -70,7 +120,7 @@ def write_image_metadata(path: Path, samples: list[tuple], class_to_idx: dict[st
                     source = image_path.parent.parent.name
                 writer.writerow([str(image_path), label, source])
         else:
-            writer = csv.writer(csv_file)
+            writer = csv.writer(csv_file, lineterminator="\n")
             writer.writerow(["path", "label", "class_idx", "source"])
             for item in samples:
                 if len(item) == 3:

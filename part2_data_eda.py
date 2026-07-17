@@ -1,3 +1,5 @@
+import argparse
+import csv
 import json
 from collections import Counter
 from pathlib import Path
@@ -7,37 +9,36 @@ import numpy as np
 from PIL import Image
 
 
+DEFAULT_DATA_ROOT = Path("data/raw/5061353/leafsnap-dataset-30subset")
+
+
 def load_metadata(path: Path) -> list[dict[str, str]]:
-    rows = []
-    with path.open("r", encoding="utf-8") as f:
-        headers = f.readline().strip().split(",")
-        for line in f:
-            parts = line.strip().split(",")
-            if len(parts) < len(headers):
-                continue
-            row = dict(zip(headers, parts))
-            rows.append(row)
-    return rows
+    with path.open("r", encoding="utf-8", newline="") as csv_file:
+        return list(csv.DictReader(csv_file))
 
 
-def inspect_images(samples: list[dict[str, str]]) -> list[dict[str, object]]:
+def inspect_images(samples: list[dict[str, str]], data_root: Path) -> list[dict[str, object]]:
     rows = []
     missing = []
     for sample in samples:
-        image_path = Path(sample["path"])
+        stored_path = Path(sample["path"])
+        image_path = stored_path if stored_path.is_absolute() else data_root / stored_path
         if not image_path.exists():
             missing.append(str(image_path))
             continue
 
         try:
             with Image.open(image_path) as image:
+                image.load()
                 width, height = image.size
                 mode = image.mode
                 rows.append(
                     {
-                        "path": str(image_path),
+                        "path": stored_path.as_posix(),
+                        "resolved_path": str(image_path),
                         "label": sample["label"],
                         "source": sample["source"],
+                        "sha256": sample.get("sha256", ""),
                         "width": width,
                         "height": height,
                         "mode": mode,
@@ -121,7 +122,7 @@ def plot_sample_pairs(samples: list[dict[str, object]], path: Path, max_examples
     rows = (len(examples) + cols - 1) // cols
     plt.figure(figsize=(cols * 3, rows * 3))
     for i, sample in enumerate(examples, start=1):
-        with Image.open(sample["path"]) as image:
+        with Image.open(sample["resolved_path"]) as image:
             image = image.convert("RGB")
             plt.subplot(rows, cols, i)
             plt.imshow(image)
@@ -152,7 +153,19 @@ def plot_augmentation_examples(path: Path, image_path: Path, image_size: int = 1
     plt.close()
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run Part 2 EDA from the locked metadata.")
+    parser.add_argument(
+        "--data-root",
+        type=Path,
+        default=DEFAULT_DATA_ROOT,
+        help="Leafsnap subset root used to resolve relative metadata paths.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     metadata_path = Path("data/metadata/images.csv")
     if not metadata_path.exists():
         raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
@@ -160,7 +173,7 @@ def main() -> None:
     samples = load_metadata(metadata_path)
     print(f"Loaded {len(samples)} metadata rows")
 
-    inspected = inspect_images(samples)
+    inspected = inspect_images(samples, args.data_root)
     print(f"Inspected {len(inspected)} readable images")
 
     source_counts = Counter(sample["source"] for sample in samples)
@@ -174,13 +187,14 @@ def main() -> None:
     plot_image_size_distribution(size_counts, figures_dir / "image_size_distribution.png")
     plot_sample_pairs(inspected, figures_dir / "lab_vs_field_examples.png")
     if inspected:
-        plot_augmentation_examples(figures_dir / "augmentation_examples.png", Path(inspected[0]["path"]))
+        plot_augmentation_examples(figures_dir / "augmentation_examples.png", Path(inspected[0]["resolved_path"]))
 
     quality_rows = [
         {
             "path": row["path"],
             "label": row["label"],
             "source": row["source"],
+            "sha256": row["sha256"],
             "width": row["width"],
             "height": row["height"],
             "mode": row["mode"],
@@ -188,9 +202,21 @@ def main() -> None:
         }
         for row in inspected
     ]
-    save_csv(Path("data/metadata/image_quality.csv"), quality_rows, ["path", "label", "source", "width", "height", "mode", "aspect_ratio"])
+    save_csv(
+        Path("data/metadata/image_quality.csv"),
+        quality_rows,
+        ["path", "label", "source", "sha256", "width", "height", "mode", "aspect_ratio"],
+    )
 
+    duplicate_rows = load_metadata(Path("data/metadata/duplicate_same_class.csv"))
+    conflict_rows = load_metadata(Path("data/metadata/conflicting_labels.csv"))
+    conflict_hashes = {row["sha256"] for row in conflict_rows}
     summary = {
+        "official_manifest_samples": len(samples) + len(duplicate_rows) + len(conflict_rows),
+        "unique_content_hashes": len(samples) + len(conflict_hashes),
+        "same_class_duplicates_removed": len(duplicate_rows),
+        "conflicting_hash_groups_removed": len(conflict_hashes),
+        "conflicting_images_removed": len(conflict_rows),
         "total_samples": len(samples),
         "readable_images": len(inspected),
         "missing_or_invalid": len(samples) - len(inspected),
