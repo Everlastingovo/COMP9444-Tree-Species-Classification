@@ -77,10 +77,16 @@ class LeafDataset(Dataset):
         image_size: int,
         training: bool,
         augment: bool = True,
+        normalization: str = "baseline",
     ) -> None:
         self.samples = samples
         self.class_to_idx = class_to_idx
-        self.transform = LeafImageTransform(image_size=image_size, training=training, augment=augment)
+        self.transform = LeafImageTransform(
+            image_size=image_size,
+            training=training,
+            augment=augment,
+            normalization=normalization,
+        )
 
     def __len__(self) -> int:
         return len(self.samples)

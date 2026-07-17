@@ -1,4 +1,4 @@
-experiment_name: mobilenetv2
+experiment_name: mobilenetv2_partial
 
 dataset:
   data_root: data/raw/5061353/leafsnap-dataset-30subset
@@ -8,20 +8,20 @@ dataset:
   normalization: imagenet
 
 model:
-  name: mobilenetv2
+  name: mobilenetv2_partial
   pretrained: true
   image_size: 224
-  fine_tune_mode: frozen
+  fine_tune_mode: partial
   unfreeze_blocks: 4
 
 training:
   seed: 42
   epochs: 20
   batch_size: 32
-  learning_rate: 0.001
+  learning_rate: 0.0001
   weight_decay: 0.0001
   num_workers: 4
   max_batches: null
 
 output:
-  dir: outputs/mobilenetv2
+  dir: outputs/mobilenetv2_partial

@@ -1,4 +1,4 @@
-experiment_name: mobilenetv2
+experiment_name: mobilenetv2_frozen
 
 dataset:
   data_root: data/raw/5061353/leafsnap-dataset-30subset
@@ -8,7 +8,7 @@ dataset:
   normalization: imagenet
 
 model:
-  name: mobilenetv2
+  name: mobilenetv2_frozen
   pretrained: true
   image_size: 224
   fine_tune_mode: frozen
@@ -24,4 +24,4 @@ training:
   max_batches: null
 
 output:
-  dir: outputs/mobilenetv2
+  dir: outputs/mobilenetv2_frozen

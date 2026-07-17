@@ -3,7 +3,7 @@ import csv
 import json
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import torch
 import yaml
@@ -20,6 +20,9 @@ from src.training.scheduler import build_cosine_scheduler
 from src.utils.checkpoint import load_checkpoint, save_checkpoint
 from src.utils.device import get_device
 from src.utils.seed import set_seed
+
+
+ModelFactory = Callable[[int, dict[str, Any]], nn.Module]
 
 
 def run_epoch(
@@ -64,23 +67,35 @@ def run_epoch(
     return total_loss / total_seen, total_correct / total_seen
 
 
-def main() -> None:
-    args = parse_args()
+def main(
+    model: nn.Module | None = None,
+    model_factory: ModelFactory | None = None,
+    default_config: Path = Path("configs/baseline.yaml"),
+) -> None:
+    if model is not None and model_factory is not None:
+        raise ValueError("Pass either model or model_factory, not both.")
+
+    args = parse_args(default_config)
     settings = build_settings(args)
 
     set_seed(settings["seed"])
     settings["output_dir"].mkdir(parents=True, exist_ok=True)
 
     device = get_device()
-    images_root = settings["images_root"] or extract_dataset(settings["zip_path"], settings["extract_root"])
+    if settings["images_root"] is not None:
+        images_root = settings["images_root"]
+    elif settings["data_root"] is not None:
+        images_root = settings["data_root"] / "dataset" / "images"
+    else:
+        images_root = extract_dataset(settings["zip_path"], settings["extract_root"])
     if not images_root.exists():
         raise FileNotFoundError(f"Images root not found: {images_root}")
 
     if settings["use_splits"]:
         split_dir = settings["split_dir"]
-        train_samples = load_samples_from_csv(split_dir / "train.csv")
-        val_samples = load_samples_from_csv(split_dir / "val.csv")
-        test_samples = load_samples_from_csv(split_dir / "test.csv")
+        train_samples = load_samples_from_csv(split_dir / "train.csv", settings["data_root"])
+        val_samples = load_samples_from_csv(split_dir / "val.csv", settings["data_root"])
+        test_samples = load_samples_from_csv(split_dir / "test.csv", settings["data_root"])
         samples = [*train_samples, *val_samples, *test_samples]
         classes = sorted({label for _, label in samples})
         class_to_idx = {class_name: index for index, class_name in enumerate(classes)}
@@ -116,10 +131,19 @@ def main() -> None:
     val_loader = make_loader(val_samples, class_to_idx, settings, training=False, device=device)
     test_loader = make_loader(test_samples, class_to_idx, settings, training=False, device=device)
 
-    model = CustomCNN(num_classes=len(classes)).to(device)
+    if model is None:
+        model = (
+            model_factory(len(classes), settings)
+            if model_factory is not None
+            else CustomCNN(num_classes=len(classes))
+        )
+    model = model.to(device)
     criterion = build_classification_loss()
+    trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    if not trainable_parameters:
+        raise ValueError("The supplied model has no trainable parameters.")
     optimizer = torch.optim.AdamW(
-        model.parameters(),
+        trainable_parameters,
         lr=settings["learning_rate"],
         weight_decay=settings["weight_decay"],
     )
@@ -128,7 +152,7 @@ def main() -> None:
     best_val_acc = -1.0
     history = []
     start_time = time.time()
-    best_model_path = settings["output_dir"] / "best_custom_cnn.pt"
+    best_model_path = settings["output_dir"] / f"best_{settings['model_name']}.pt"
 
     for epoch in range(1, settings["epochs"] + 1):
         print(f"\nEpoch {epoch}/{settings['epochs']}")
@@ -191,7 +215,11 @@ def main() -> None:
         writer.writerows(history)
 
     summary = {
-        "model": "Custom CNN trained from scratch",
+        "model": (
+            "Custom CNN trained from scratch"
+            if settings["model_name"] == "custom_cnn"
+            else settings["model_name"]
+        ),
         "image_source": settings["image_source"],
         "num_classes": len(classes),
         "train_images": len(train_samples),
@@ -219,7 +247,14 @@ def make_loader(
     device: torch.device,
 ) -> DataLoader:
     return DataLoader(
-        LeafDataset(samples, class_to_idx, settings["image_size"], training=training, augment=not settings["no_augmentation"]),
+        LeafDataset(
+            samples,
+            class_to_idx,
+            settings["image_size"],
+            training=training,
+            augment=not settings["no_augmentation"],
+            normalization=settings["normalization"],
+        ),
         batch_size=settings["batch_size"],
         shuffle=training,
         num_workers=settings["num_workers"],
@@ -227,14 +262,20 @@ def make_loader(
     )
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Part 1: train a custom CNN from scratch on Leafsnap.")
-    parser.add_argument("--config", type=Path, default=Path("configs/baseline.yaml"))
+def parse_args(default_config: Path = Path("configs/baseline.yaml")) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train a classification model on the locked Leafsnap splits.")
+    parser.add_argument("--config", type=Path, default=default_config)
+    parser.add_argument("--data-root", type=Path, default=None)
     parser.add_argument("--images-root", type=Path, default=None)
     parser.add_argument("--zip-path", type=Path, default=None)
     parser.add_argument("--extract-root", type=Path, default=None)
     parser.add_argument("--image-source", choices=["field", "lab", "all"], default=None)
-    parser.add_argument("--use-splits", action="store_true", help="Load train/val/test samples from data/splits CSV files.")
+    parser.add_argument(
+        "--use-splits",
+        action="store_true",
+        default=None,
+        help="Load train/val/test samples from data/splits CSV files.",
+    )
     parser.add_argument("--split-dir", type=Path, default=None, help="Directory containing train.csv, val.csv, and test.csv")
     parser.add_argument("--no-augmentation", action="store_true", help="Disable training-time augmentation for a deterministic baseline.")
     parser.add_argument("--output-dir", type=Path, default=None)
@@ -257,13 +298,19 @@ def build_settings(args: argparse.Namespace) -> dict[str, Any]:
     settings = {
         "zip_path": Path(pick(args.zip_path, nested(config, "dataset", "zip_path"), "data/raw/5061353/leafsnap-dataset-30subset.zip")),
         "extract_root": Path(pick(args.extract_root, nested(config, "dataset", "extract_root"), "data/raw/5061353")),
+        "data_root": optional_path(pick(args.data_root, nested(config, "dataset", "data_root"), None)),
         "images_root": optional_path(pick(args.images_root, nested(config, "dataset", "images_root"), None)),
         "image_source": pick(args.image_source, nested(config, "dataset", "image_source"), "field"),
-        "use_splits": args.use_splits,
-        "split_dir": Path(pick(args.split_dir, None, "data/splits")),
+        "use_splits": bool(pick(args.use_splits, nested(config, "dataset", "use_splits"), False)),
+        "split_dir": Path(pick(args.split_dir, nested(config, "dataset", "split_dir"), "data/splits")),
         "no_augmentation": args.no_augmentation,
         "output_dir": Path(pick(args.output_dir, nested(config, "output", "dir"), "outputs/baseline")),
+        "model_name": str(pick(None, nested(config, "model", "name"), "custom_cnn")),
+        "pretrained": bool(pick(None, nested(config, "model", "pretrained"), False)),
+        "fine_tune_mode": str(pick(None, nested(config, "model", "fine_tune_mode"), "full")),
+        "unfreeze_blocks": int(pick(None, nested(config, "model", "unfreeze_blocks"), 4)),
         "image_size": int(pick(args.image_size, nested(config, "model", "image_size"), 128)),
+        "normalization": str(pick(None, nested(config, "dataset", "normalization"), "baseline")),
         "epochs": int(pick(args.epochs, nested(config, "training", "epochs"), 20)),
         "batch_size": int(pick(args.batch_size, nested(config, "training", "batch_size"), 32)),
         "learning_rate": float(pick(args.learning_rate, nested(config, "training", "learning_rate"), 1e-3)),

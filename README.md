@@ -52,3 +52,13 @@ python part2_data_eda.py --data-root "D:\path\to\leafsnap-dataset-30subset"
 
 Do not regenerate the checked-in metadata or split files unless the team is intentionally relocking
 the common data foundation.
+
+## Part 3: MobileNetV2 transfer learning
+
+Part 3 adds an ImageNet-pretrained MobileNetV2 with frozen, partial fine-tuning and full fine-tuning
+modes. The scheduled experiments are the frozen and partial modes; both reuse the locked Part 2
+splits and select ImageNet normalization without changing the CustomCNN defaults.
+
+Use `part3_mobilenetv2.py` with `configs/mobilenetv2_frozen.yaml` or
+`configs/mobilenetv2_partial.yaml`. Setup, smoke-test commands and experiment boundaries are in
+`PART3_MOBILENETV2.md`.

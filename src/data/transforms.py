@@ -5,11 +5,31 @@ import torch
 from PIL import Image, ImageEnhance, ImageOps
 
 
+NORMALIZATION_STATS = {
+    "baseline": ((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    "imagenet": ((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+}
+
+
 class LeafImageTransform:
-    def __init__(self, image_size: int, training: bool, augment: bool = True) -> None:
+    def __init__(
+        self,
+        image_size: int,
+        training: bool,
+        augment: bool = True,
+        normalization: str = "baseline",
+    ) -> None:
+        if normalization not in NORMALIZATION_STATS:
+            raise ValueError(
+                f"Unknown normalization: {normalization}. Expected one of {sorted(NORMALIZATION_STATS)}"
+            )
         self.image_size = image_size
         self.training = training
         self.augment = augment
+        self.normalization = normalization
+        mean, std = NORMALIZATION_STATS[normalization]
+        self.mean = torch.tensor(mean, dtype=torch.float32).view(3, 1, 1)
+        self.std = torch.tensor(std, dtype=torch.float32).view(3, 1, 1)
 
     def __call__(self, image: Image.Image) -> torch.Tensor:
         if self.training and self.augment:
@@ -29,7 +49,7 @@ class LeafImageTransform:
 
         array = np.asarray(image, dtype=np.float32) / 255.0
         tensor = torch.from_numpy(array).permute(2, 0, 1)
-        return (tensor - 0.5) / 0.5
+        return (tensor - self.mean) / self.std
 
 
 def pad_to_square(image: Image.Image) -> Image.Image:
