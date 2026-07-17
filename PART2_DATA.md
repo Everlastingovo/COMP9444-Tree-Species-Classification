@@ -52,7 +52,7 @@ Part 2 specifics:
 - Field images: 2,075
 - The train/val/test splits are non-overlapping, and all split paths exist in `data/metadata/images.csv`.
 
-## What can be done next （下一个人能发现这条不
+## What can be done next 
 
 1. Use the existing split files for training:
    - `data/splits/train.csv`
