@@ -22,8 +22,8 @@ Part 2 specifics:
 - Uses `field` and `lab/Auto_cropped` images only
 - Builds a stratified group-aware split by species and stem ID
 - Includes 30 species classes
-- Total samples: 7,239 images
-- Lab images: 5,164
+- Total samples: 7,395 images
+- Lab images: 5,320
 - Field images: 2,075
 
 ## What I completed
@@ -46,11 +46,33 @@ Part 2 specifics:
 
 ## Current results
 
-- Total samples: 7,239
+- Total samples: 7,395 (matches the official image list count exactly)
 - Number of classes: 30
-- Lab images: 5,164
+- Lab images: 5,320
 - Field images: 2,075
-- The train/val/test splits are non-overlapping, and all split paths exist in `data/metadata/images.csv`.
+- The train/val/test splits are non-overlapping (verified no shared leaf-sample group IDs across splits), and all split paths exist in `data/metadata/images.csv`.
+
+### Fixed 2026-07-17: 156 missing lab images
+
+An earlier version of `src/data/build_metadata.py` skipped any `lab`-source
+row whose official path did not already point into `Auto_cropped/` (it hit a
+bare `continue`). 156 rows for two species were affected:
+
+- `Broussonettia papyrifera`: 7 images
+- `Chionanthus virginicus`: 149 images
+
+All 156 have a valid, readable `Auto_cropped` counterpart on disk at
+`dataset/images/lab/Auto_cropped/<species>/<filename>`, and none duplicate an
+already-included row. The parser now normalizes any non-`Auto_cropped` lab
+path to its `Auto_cropped` equivalent instead of dropping it. Total sample
+count went from 7,239 to 7,395, matching
+`leafsnap-dataset-30subset-images.txt` exactly.
+
+**This changes `data/metadata/images.csv` and all three split files.**
+Anyone who trained against the previous split (Baseline, MobileNetV2,
+ResNet18) needs to re-run using the regenerated splits before results are
+comparable — the old checkpoints/metrics are not valid for the final
+comparison table.
 
 ## What can be done next 
 
@@ -71,4 +93,7 @@ Part 2 specifics:
 ## Notes
 
 - I have finished Part 2 data cleaning and analysis.
-- Later team members do not need to redo Part 2 data preparation. They can use the existing `data/splits` and `data/metadata` files directly.
+- The dataset and splits were corrected on 2026-07-17 (see above) — anyone
+  who already ran training against the old 7,239-image split must re-run
+  against the current `data/splits` files before results are compared or
+  reported.

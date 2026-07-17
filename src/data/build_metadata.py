@@ -38,9 +38,11 @@ def parse_official_image_list(list_path: Path, dataset_root: Path) -> list[tuple
         if source not in {"lab", "field"}:
             continue
 
+        if source == "lab" and "Auto_cropped" not in image_path.parts:
+            lab_idx = image_path.parts.index("lab")
+            image_path = Path(*image_path.parts[: lab_idx + 1], "Auto_cropped", *image_path.parts[lab_idx + 1 :])
+
         full_path = dataset_root / image_path
-        if source == "lab" and "Auto_cropped" not in full_path.parts:
-            continue
         if not full_path.exists():
             raise FileNotFoundError(f"Official image list referenced missing file: {full_path}")
 
