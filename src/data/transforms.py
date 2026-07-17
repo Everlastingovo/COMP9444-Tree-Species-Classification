@@ -6,12 +6,13 @@ from PIL import Image, ImageEnhance, ImageOps
 
 
 class LeafImageTransform:
-    def __init__(self, image_size: int, training: bool) -> None:
+    def __init__(self, image_size: int, training: bool, augment: bool = True) -> None:
         self.image_size = image_size
         self.training = training
+        self.augment = augment
 
     def __call__(self, image: Image.Image) -> torch.Tensor:
-        if self.training:
+        if self.training and self.augment:
             image = ImageOps.contain(image, (self.image_size + 24, self.image_size + 24))
             image = pad_to_square(image)
             image = random_crop(image, self.image_size)
