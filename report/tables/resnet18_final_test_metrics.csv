@@ -1,0 +1,2 @@
+num_samples,accuracy,macro_precision,macro_recall,macro_f1,weighted_precision,weighted_recall,weighted_f1,top5_accuracy,checkpoint,config
+1075,0.9553488372093023,0.9647108742980748,0.9528835390243866,0.9538799112104562,0.9621660617671731,0.9553488372093023,0.9538560037834458,1.0,outputs/resnet18/layer4_lr3e5/best_model.pt,configs/resnet18_layer4_lr3e5.yaml

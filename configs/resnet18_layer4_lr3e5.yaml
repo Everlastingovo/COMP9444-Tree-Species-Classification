@@ -1,0 +1,20 @@
+experiment_name: resnet18_layer4_lr3e5
+
+model:
+  num_classes: 30
+  pretrained: true
+  trainable_scope: layer4
+  image_size: 224
+  normalization: imagenet
+  initial_checkpoint: outputs/resnet18/frozen/best_model.pt
+
+training:
+  epochs: 10
+  batch_size: 16
+  learning_rate: 0.00003
+  weight_decay: 0.0001
+  seed: 42
+  num_workers: 0
+
+output:
+  dir: outputs/resnet18/layer4_lr3e5

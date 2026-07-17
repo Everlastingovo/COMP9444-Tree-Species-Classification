@@ -22,6 +22,17 @@ from src.utils.device import get_device
 from src.utils.seed import set_seed
 
 
+def set_frozen_batch_norm_eval(model: nn.Module) -> None:
+    """Keep BatchNorm statistics fixed when all of its parameters are frozen."""
+    for module in model.modules():
+        if not isinstance(module, nn.modules.batchnorm._BatchNorm):
+            continue
+
+        parameters = list(module.parameters())
+        if parameters and not any(parameter.requires_grad for parameter in parameters):
+            module.eval()
+
+
 def run_epoch(
     model: nn.Module,
     loader: DataLoader,
@@ -32,6 +43,8 @@ def run_epoch(
 ) -> tuple[float, float]:
     is_training = optimizer is not None
     model.train(is_training)
+    if is_training:
+        set_frozen_batch_norm_eval(model)
 
     total_loss = 0.0
     total_correct = 0
