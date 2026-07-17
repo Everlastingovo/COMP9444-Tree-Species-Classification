@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,12 +18,20 @@ from src.data.split_dataset import stratified_split, write_dataset_split_csv, wr
 from src.models.baseline_cnn import CustomCNN
 from src.training.losses import build_classification_loss
 from src.training.scheduler import build_cosine_scheduler
-from src.utils.checkpoint import load_checkpoint, save_checkpoint
+from src.utils.checkpoint import load_checkpoint, save_checkpoint, serializable_settings
 from src.utils.device import get_device
 from src.utils.seed import set_seed
 
 
 ModelFactory = Callable[[int, dict[str, Any]], nn.Module]
+
+
+@dataclass(frozen=True)
+class EpochMetrics:
+    loss: float
+    top1: float
+    top5: float
+    macro_f1: float
 
 
 def run_epoch(
@@ -32,13 +41,18 @@ def run_epoch(
     device: torch.device,
     optimizer: torch.optim.Optimizer | None = None,
     max_batches: int | None = None,
-) -> tuple[float, float]:
+    scaler: torch.amp.GradScaler | None = None,
+    amp_enabled: bool = False,
+    num_classes: int = 30,
+) -> EpochMetrics:
     is_training = optimizer is not None
     model.train(is_training)
 
     total_loss = 0.0
-    total_correct = 0
+    total_top1_correct = 0
+    total_top5_correct = 0
     total_seen = 0
+    confusion = torch.zeros((num_classes, num_classes), dtype=torch.int64)
 
     progress = tqdm(loader, leave=False)
     for batch_index, (images, targets) in enumerate(progress, start=1):
@@ -49,22 +63,64 @@ def run_epoch(
             optimizer.zero_grad(set_to_none=True)
 
         with torch.set_grad_enabled(is_training):
-            logits = model(images)
-            loss = criterion(logits, targets)
+            with torch.autocast(
+                device_type=device.type,
+                dtype=torch.float16,
+                enabled=amp_enabled,
+            ):
+                logits = model(images)
+                loss = criterion(logits, targets)
             if is_training:
-                loss.backward()
-                optimizer.step()
+                if scaler is not None:
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                else:
+                    loss.backward()
+                    optimizer.step()
 
         batch_size = targets.size(0)
+        predictions = logits.argmax(dim=1)
+        top5_predictions = logits.topk(k=min(5, num_classes), dim=1).indices
         total_loss += loss.item() * batch_size
-        total_correct += (logits.argmax(dim=1) == targets).sum().item()
+        total_top1_correct += (predictions == targets).sum().item()
+        total_top5_correct += (top5_predictions == targets.unsqueeze(1)).any(dim=1).sum().item()
         total_seen += batch_size
-        progress.set_description(f"loss={total_loss / total_seen:.4f}, acc={total_correct / total_seen:.4f}")
+        encoded_pairs = targets.detach().cpu() * num_classes + predictions.detach().cpu()
+        confusion += torch.bincount(encoded_pairs, minlength=num_classes**2).reshape(
+            num_classes,
+            num_classes,
+        )
+        progress.set_description(
+            f"loss={total_loss / total_seen:.4f}, top1={total_top1_correct / total_seen:.4f}"
+        )
 
         if max_batches is not None and batch_index >= max_batches:
             break
 
-    return total_loss / total_seen, total_correct / total_seen
+    if total_seen == 0:
+        raise RuntimeError("The DataLoader produced no samples.")
+
+    return EpochMetrics(
+        loss=total_loss / total_seen,
+        top1=total_top1_correct / total_seen,
+        top5=total_top5_correct / total_seen,
+        macro_f1=macro_f1_from_confusion(confusion),
+    )
+
+
+def macro_f1_from_confusion(confusion: torch.Tensor) -> float:
+    confusion = confusion.to(dtype=torch.float64)
+    true_positives = confusion.diag()
+    false_positives = confusion.sum(dim=0) - true_positives
+    false_negatives = confusion.sum(dim=1) - true_positives
+    denominator = 2 * true_positives + false_positives + false_negatives
+    per_class_f1 = torch.where(
+        denominator > 0,
+        2 * true_positives / denominator,
+        torch.zeros_like(denominator),
+    )
+    return per_class_f1.mean().item()
 
 
 def main(
@@ -95,11 +151,15 @@ def main(
         split_dir = settings["split_dir"]
         train_samples = load_samples_from_csv(split_dir / "train.csv", settings["data_root"])
         val_samples = load_samples_from_csv(split_dir / "val.csv", settings["data_root"])
-        test_samples = load_samples_from_csv(split_dir / "test.csv", settings["data_root"])
-        samples = [*train_samples, *val_samples, *test_samples]
+        test_samples = None
+        samples = [*train_samples, *val_samples]
+        splits = {"train": train_samples, "val": val_samples}
+        if settings["evaluate_test"]:
+            test_samples = load_samples_from_csv(split_dir / "test.csv", settings["data_root"])
+            samples.extend(test_samples)
+            splits["test"] = test_samples
         classes = sorted({label for _, label in samples})
         class_to_idx = {class_name: index for index, class_name in enumerate(classes)}
-        splits = {"train": train_samples, "val": val_samples, "test": test_samples}
     else:
         samples = collect_image_paths(images_root, settings["image_source"])
         classes = sorted({label for _, label in samples})
@@ -122,14 +182,16 @@ def main(
     print(f"Device: {device}")
     print(f"Image source: {image_source_label}")
     print(f"Classes: {len(classes)}")
-    print(f"Images: train={len(train_samples)}, val={len(val_samples)}, test={len(test_samples)}")
+    split_message = f"Images: train={len(train_samples)}, val={len(val_samples)}"
+    if test_samples is not None:
+        split_message += f", test={len(test_samples)}"
+    print(split_message)
 
     write_dataset_split_csv(settings["output_dir"] / "dataset_split.csv", splits)
     write_class_mapping(settings["output_dir"] / "class_to_idx.json", class_to_idx)
 
     train_loader = make_loader(train_samples, class_to_idx, settings, training=True, device=device)
     val_loader = make_loader(val_samples, class_to_idx, settings, training=False, device=device)
-    test_loader = make_loader(test_samples, class_to_idx, settings, training=False, device=device)
 
     if model is None:
         model = (
@@ -142,77 +204,149 @@ def main(
     trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
     if not trainable_parameters:
         raise ValueError("The supplied model has no trainable parameters.")
+    total_parameters = sum(parameter.numel() for parameter in model.parameters())
+    trainable_parameter_count = sum(parameter.numel() for parameter in trainable_parameters)
     optimizer = torch.optim.AdamW(
         trainable_parameters,
         lr=settings["learning_rate"],
         weight_decay=settings["weight_decay"],
     )
     scheduler = build_cosine_scheduler(optimizer, settings["epochs"])
+    amp_enabled = settings["amp"] and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda") if amp_enabled else None
+    selection_metric = settings["selection_metric"]
+    valid_selection_metrics = {"val_loss", "val_top1", "val_top5", "val_macro_f1"}
+    if selection_metric not in valid_selection_metrics:
+        raise ValueError(
+            f"Unsupported selection metric: {selection_metric}. "
+            f"Expected one of {sorted(valid_selection_metrics)}"
+        )
 
-    best_val_acc = -1.0
-    history = []
+    gpu_name = torch.cuda.get_device_name(0) if device.type == "cuda" else None
+    resolved_config = {
+        "settings": serializable_settings(settings),
+        "device": str(device),
+        "gpu": gpu_name,
+        "amp_enabled": amp_enabled,
+        "num_classes": len(classes),
+        "split_counts": {name: len(split_samples) for name, split_samples in splits.items()},
+        "total_parameters": total_parameters,
+        "trainable_parameters": trainable_parameter_count,
+    }
+    resolved_config_path = settings["output_dir"] / "resolved_config.json"
+    resolved_config_path.write_text(json.dumps(resolved_config, indent=2), encoding="utf-8")
+
+    print(f"AMP enabled: {amp_enabled}")
+    print(f"Selection metric: {selection_metric}")
+    print(f"Parameters: total={total_parameters:,}, trainable={trainable_parameter_count:,}")
+
+    best_score = float("inf") if selection_metric == "val_loss" else float("-inf")
+    best_row: dict[str, Any] | None = None
+    history: list[dict[str, Any]] = []
+    epochs_without_improvement = 0
+    early_stopped = False
     start_time = time.time()
     best_model_path = settings["output_dir"] / f"best_{settings['model_name']}.pt"
+    history_path = settings["output_dir"] / "history.csv"
+    metrics_path = settings["output_dir"] / "metrics.csv"
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats(device)
 
     for epoch in range(1, settings["epochs"] + 1):
         print(f"\nEpoch {epoch}/{settings['epochs']}")
-        train_loss, train_acc = run_epoch(
+        epoch_start = time.time()
+        learning_rate = optimizer.param_groups[0]["lr"]
+        train_metrics = run_epoch(
             model,
             train_loader,
             criterion,
             device,
             optimizer=optimizer,
             max_batches=settings["max_batches"],
+            scaler=scaler,
+            amp_enabled=amp_enabled,
+            num_classes=len(classes),
         )
-        val_loss, val_acc = run_epoch(
+        val_metrics = run_epoch(
             model,
             val_loader,
             criterion,
             device,
             max_batches=settings["max_batches"],
+            amp_enabled=amp_enabled,
+            num_classes=len(classes),
         )
         scheduler.step()
 
         row = {
             "epoch": epoch,
-            "train_loss": train_loss,
-            "train_acc": train_acc,
-            "val_loss": val_loss,
-            "val_acc": val_acc,
-            "lr": scheduler.get_last_lr()[0],
+            "train_loss": train_metrics.loss,
+            "train_top1": train_metrics.top1,
+            "val_loss": val_metrics.loss,
+            "val_top1": val_metrics.top1,
+            "val_top5": val_metrics.top5,
+            "val_macro_f1": val_metrics.macro_f1,
+            "learning_rate": learning_rate,
+            "epoch_time_seconds": time.time() - epoch_start,
         }
         history.append(row)
+        write_history_csv(history_path, history)
+        write_history_csv(metrics_path, history)
         print(
-            f"train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, "
-            f"val_loss={val_loss:.4f}, val_acc={val_acc:.4f}"
+            f"train_loss={train_metrics.loss:.4f}, train_top1={train_metrics.top1:.4f}, "
+            f"val_loss={val_metrics.loss:.4f}, val_top1={val_metrics.top1:.4f}, "
+            f"val_top5={val_metrics.top5:.4f}, val_macro_f1={val_metrics.macro_f1:.4f}, "
+            f"time={row['epoch_time_seconds']:.1f}s"
         )
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
+        current_score = float(row[selection_metric])
+        improved = current_score < best_score if selection_metric == "val_loss" else current_score > best_score
+        if improved:
+            best_score = current_score
+            best_row = dict(row)
+            epochs_without_improvement = 0
             save_checkpoint(
                 best_model_path,
                 model=model,
                 class_to_idx=class_to_idx,
                 settings=settings,
-                best_val_acc=best_val_acc,
+                best_val_acc=val_metrics.top1,
+                epoch=epoch,
+                best_metrics=best_row,
+                selection_metric=selection_metric,
             )
             print(f"Saved best model to {best_model_path}")
+        else:
+            epochs_without_improvement += 1
 
-    checkpoint = load_checkpoint(best_model_path, device=device)
-    model.load_state_dict(checkpoint["model_state_dict"])
-    test_loss, test_acc = run_epoch(
-        model,
-        test_loader,
-        criterion,
-        device,
-        max_batches=settings["max_batches"],
-    )
+        patience = settings["early_stopping_patience"]
+        if patience is not None and patience > 0 and epochs_without_improvement >= patience:
+            early_stopped = True
+            print(f"Early stopping triggered after {patience} epochs without improvement.")
+            break
 
-    metrics_path = settings["output_dir"] / "metrics.csv"
-    with metrics_path.open("w", newline="", encoding="utf-8") as csv_file:
-        writer = csv.DictWriter(csv_file, fieldnames=list(history[0].keys()))
-        writer.writeheader()
-        writer.writerows(history)
+    if best_row is None:
+        raise RuntimeError("Training finished without producing a best checkpoint.")
+
+    elapsed_seconds = time.time() - start_time
+    test_metrics = None
+    if settings["evaluate_test"]:
+        if test_samples is None:
+            raise RuntimeError("Test evaluation was requested but no test split was loaded.")
+        checkpoint = load_checkpoint(best_model_path, device=device)
+        model.load_state_dict(checkpoint["model_state_dict"])
+        test_loader = make_loader(test_samples, class_to_idx, settings, training=False, device=device)
+        test_metrics = run_epoch(
+            model,
+            test_loader,
+            criterion,
+            device,
+            max_batches=settings["max_batches"],
+            amp_enabled=amp_enabled,
+            num_classes=len(classes),
+        )
+
+    save_training_curves(settings["output_dir"], history)
 
     summary = {
         "model": (
@@ -224,19 +358,98 @@ def main(
         "num_classes": len(classes),
         "train_images": len(train_samples),
         "val_images": len(val_samples),
-        "test_images": len(test_samples),
-        "best_val_acc": best_val_acc,
-        "test_loss": test_loss,
-        "test_acc": test_acc,
-        "elapsed_minutes": (time.time() - start_time) / 60,
+        "test_evaluated": test_metrics is not None,
+        "configured_epochs": settings["epochs"],
+        "epochs_completed": len(history),
+        "best_epoch": best_row["epoch"],
+        "selection_metric": selection_metric,
+        "best_selection_score": best_score,
+        "best_val_loss": best_row["val_loss"],
+        "minimum_val_loss": min(row["val_loss"] for row in history),
+        "best_val_top1": best_row["val_top1"],
+        "best_val_top5": best_row["val_top5"],
+        "best_val_macro_f1": best_row["val_macro_f1"],
+        "total_parameters": total_parameters,
+        "trainable_parameters": trainable_parameter_count,
+        "amp_enabled": amp_enabled,
+        "early_stopping_patience": settings["early_stopping_patience"],
+        "early_stopped": early_stopped,
+        "elapsed_seconds": elapsed_seconds,
+        "elapsed_minutes": elapsed_seconds / 60,
+        "average_epoch_seconds": sum(row["epoch_time_seconds"] for row in history) / len(history),
+        "device": str(device),
+        "gpu": gpu_name,
+        "max_gpu_memory_allocated_mb": (
+            torch.cuda.max_memory_allocated(device) / (1024**2) if device.type == "cuda" else None
+        ),
+        "max_gpu_memory_reserved_mb": (
+            torch.cuda.max_memory_reserved(device) / (1024**2) if device.type == "cuda" else None
+        ),
     }
-    summary_path = settings["output_dir"] / "summary.json"
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    if test_metrics is not None:
+        summary.update(
+            {
+                "test_images": len(test_samples),
+                "test_loss": test_metrics.loss,
+                "test_top1": test_metrics.top1,
+                "test_top5": test_metrics.top5,
+                "test_macro_f1": test_metrics.macro_f1,
+            }
+        )
+    summary_path = settings["output_dir"] / "training_summary.json"
+    summary_text = json.dumps(summary, indent=2)
+    summary_path.write_text(summary_text, encoding="utf-8")
+    (settings["output_dir"] / "summary.json").write_text(summary_text, encoding="utf-8")
 
     print("\nFinal result")
-    print(json.dumps(summary, indent=2))
-    print(f"Metrics saved to {metrics_path}")
+    print(summary_text)
+    print(f"History saved to {history_path}")
     print(f"Summary saved to {summary_path}")
+
+
+def write_history_csv(path: Path, history: list[dict[str, Any]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=list(history[0].keys()))
+        writer.writeheader()
+        writer.writerows(history)
+
+
+def save_training_curves(output_dir: Path, history: list[dict[str, Any]]) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from matplotlib import pyplot as plt
+
+    epochs = [row["epoch"] for row in history]
+
+    plt.figure(figsize=(7, 5))
+    plt.plot(epochs, [row["train_loss"] for row in history], marker="o", label="Train loss")
+    plt.plot(epochs, [row["val_loss"] for row in history], marker="o", label="Validation loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("MobileNetV2 loss")
+    plt.grid(alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_dir / "loss_curve.png", dpi=160)
+    plt.close()
+
+    metric_curves = (
+        ("val_top1", "Validation Top-1 accuracy", "val_top1_curve.png"),
+        ("val_macro_f1", "Validation Macro-F1", "val_macro_f1_curve.png"),
+        ("val_top5", "Validation Top-5 accuracy", "val_top5_curve.png"),
+    )
+    for metric, title, filename in metric_curves:
+        plt.figure(figsize=(7, 5))
+        plt.plot(epochs, [row[metric] for row in history], marker="o")
+        plt.xlabel("Epoch")
+        plt.ylabel(title)
+        plt.ylim(0.0, 1.0)
+        plt.title(title)
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(output_dir / filename, dpi=160)
+        plt.close()
 
 
 def make_loader(
@@ -294,6 +507,7 @@ def parse_args(default_config: Path = Path("configs/baseline.yaml")) -> argparse
 
 def build_settings(args: argparse.Namespace) -> dict[str, Any]:
     config = load_config(args.config)
+    configured_patience = nested(config, "training", "early_stopping_patience")
 
     settings = {
         "zip_path": Path(pick(args.zip_path, nested(config, "dataset", "zip_path"), "data/raw/5061353/leafsnap-dataset-30subset.zip")),
@@ -320,6 +534,14 @@ def build_settings(args: argparse.Namespace) -> dict[str, Any]:
         "seed": int(pick(args.seed, nested(config, "training", "seed"), 42)),
         "num_workers": int(pick(args.num_workers, nested(config, "training", "num_workers"), 0)),
         "max_batches": pick(args.max_batches, nested(config, "training", "max_batches"), None),
+        "amp": bool(pick(None, nested(config, "training", "amp"), False)),
+        "early_stopping_patience": (
+            int(configured_patience) if configured_patience is not None else None
+        ),
+        "selection_metric": str(
+            pick(None, nested(config, "training", "selection_metric"), "val_top1")
+        ),
+        "evaluate_test": bool(pick(None, nested(config, "training", "evaluate_test"), True)),
     }
     return settings
 
