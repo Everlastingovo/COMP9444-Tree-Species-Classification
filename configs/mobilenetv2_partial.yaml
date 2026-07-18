@@ -13,15 +13,22 @@ model:
   image_size: 224
   fine_tune_mode: partial
   unfreeze_blocks: 4
+  initial_checkpoint: outputs/mobilenetv2/frozen_seed42/best_mobilenetv2_frozen.pt
 
 training:
   seed: 42
-  epochs: 20
+  epochs: 15
   batch_size: 32
   learning_rate: 0.0001
+  feature_learning_rate: 0.00001
+  classifier_learning_rate: 0.0001
   weight_decay: 0.0001
   num_workers: 4
   max_batches: null
+  amp: true
+  early_stopping_patience: 5
+  selection_metric: val_macro_f1
+  evaluate_test: false
 
 output:
-  dir: outputs/mobilenetv2_partial
+  dir: outputs/mobilenetv2/partial_seed42

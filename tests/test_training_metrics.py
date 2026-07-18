@@ -5,7 +5,14 @@ import yaml
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.training.trainer import macro_f1_from_confusion, run_epoch, save_training_curves
+from src.models.mobilenetv2 import build_mobilenetv2
+from src.training.trainer import (
+    build_optimizer,
+    macro_f1_from_confusion,
+    run_epoch,
+    save_training_curves,
+    trainable_feature_block_indices,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +60,35 @@ def test_frozen_config_selects_macro_f1_without_test_evaluation() -> None:
     assert config["training"]["amp"] is True
     assert config["training"]["early_stopping_patience"] == 5
     assert config["training"]["epochs"] == 15
+
+
+def test_partial_config_and_differential_optimizer_groups() -> None:
+    config_path = REPO_ROOT / "configs/mobilenetv2_partial.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    model = build_mobilenetv2(
+        num_classes=30,
+        pretrained=False,
+        fine_tune_mode="partial",
+        unfreeze_blocks=4,
+    )
+    optimizer, groups = build_optimizer(
+        model,
+        {
+            "learning_rate": config["training"]["learning_rate"],
+            "feature_learning_rate": config["training"]["feature_learning_rate"],
+            "classifier_learning_rate": config["training"]["classifier_learning_rate"],
+            "weight_decay": config["training"]["weight_decay"],
+        },
+    )
+
+    assert config["training"]["evaluate_test"] is False
+    assert config["training"]["selection_metric"] == "val_macro_f1"
+    assert config["model"]["initial_checkpoint"].endswith("best_mobilenetv2_frozen.pt")
+    assert trainable_feature_block_indices(model) == [15, 16, 17, 18]
+    assert [group["name"] for group in groups] == ["features", "classifier"]
+    assert [group["parameter_count"] for group in groups] == [1_526_080, 38_430]
+    assert [group["initial_learning_rate"] for group in groups] == [1e-5, 1e-4]
+    assert [group["lr"] for group in optimizer.param_groups] == [1e-5, 1e-4]
 
 
 def test_training_curves_are_written(tmp_path: Path) -> None:

@@ -199,6 +199,26 @@ def main(
             if model_factory is not None
             else CustomCNN(num_classes=len(classes))
         )
+    initial_checkpoint_verified = False
+    initial_checkpoint_epoch = None
+    if settings["initial_checkpoint"] is not None:
+        initial_checkpoint_path = settings["initial_checkpoint"]
+        if not initial_checkpoint_path.is_file():
+            raise FileNotFoundError(f"Initial checkpoint not found: {initial_checkpoint_path}")
+        initial_checkpoint = load_checkpoint(initial_checkpoint_path, device=torch.device("cpu"))
+        checkpoint_state = initial_checkpoint["model_state_dict"]
+        model.load_state_dict(checkpoint_state, strict=True)
+        initial_checkpoint_verified = all(
+            torch.equal(value.detach().cpu(), checkpoint_state[key].detach().cpu())
+            for key, value in model.state_dict().items()
+        )
+        if not initial_checkpoint_verified:
+            raise RuntimeError("Model parameters do not match the initial checkpoint after loading.")
+        initial_checkpoint_epoch = initial_checkpoint.get("epoch")
+        print(
+            f"Loaded and verified initial checkpoint: {initial_checkpoint_path} "
+            f"(epoch={initial_checkpoint_epoch})"
+        )
     model = model.to(device)
     criterion = build_classification_loss()
     trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
@@ -206,11 +226,7 @@ def main(
         raise ValueError("The supplied model has no trainable parameters.")
     total_parameters = sum(parameter.numel() for parameter in model.parameters())
     trainable_parameter_count = sum(parameter.numel() for parameter in trainable_parameters)
-    optimizer = torch.optim.AdamW(
-        trainable_parameters,
-        lr=settings["learning_rate"],
-        weight_decay=settings["weight_decay"],
-    )
+    optimizer, optimizer_group_summary = build_optimizer(model, settings)
     scheduler = build_cosine_scheduler(optimizer, settings["epochs"])
     amp_enabled = settings["amp"] and device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda") if amp_enabled else None
@@ -232,6 +248,10 @@ def main(
         "split_counts": {name: len(split_samples) for name, split_samples in splits.items()},
         "total_parameters": total_parameters,
         "trainable_parameters": trainable_parameter_count,
+        "initial_checkpoint_verified": initial_checkpoint_verified,
+        "initial_checkpoint_epoch": initial_checkpoint_epoch,
+        "trainable_feature_blocks": trainable_feature_block_indices(model),
+        "optimizer_parameter_groups": optimizer_group_summary,
     }
     resolved_config_path = settings["output_dir"] / "resolved_config.json"
     resolved_config_path.write_text(json.dumps(resolved_config, indent=2), encoding="utf-8")
@@ -239,6 +259,11 @@ def main(
     print(f"AMP enabled: {amp_enabled}")
     print(f"Selection metric: {selection_metric}")
     print(f"Parameters: total={total_parameters:,}, trainable={trainable_parameter_count:,}")
+    for group in optimizer_group_summary:
+        print(
+            f"Optimizer group {group['name']}: parameters={group['parameter_count']:,}, "
+            f"lr={group['initial_learning_rate']}"
+        )
 
     best_score = float("inf") if selection_metric == "val_loss" else float("-inf")
     best_row: dict[str, Any] | None = None
@@ -255,7 +280,10 @@ def main(
     for epoch in range(1, settings["epochs"] + 1):
         print(f"\nEpoch {epoch}/{settings['epochs']}")
         epoch_start = time.time()
-        learning_rate = optimizer.param_groups[0]["lr"]
+        group_learning_rates = {
+            str(group.get("name", f"group_{index}")): group["lr"]
+            for index, group in enumerate(optimizer.param_groups)
+        }
         train_metrics = run_epoch(
             model,
             train_loader,
@@ -286,9 +314,13 @@ def main(
             "val_top1": val_metrics.top1,
             "val_top5": val_metrics.top5,
             "val_macro_f1": val_metrics.macro_f1,
-            "learning_rate": learning_rate,
+            "learning_rate": next(iter(group_learning_rates.values())),
             "epoch_time_seconds": time.time() - epoch_start,
         }
+        if "features" in group_learning_rates:
+            row["feature_learning_rate"] = group_learning_rates["features"]
+        if "classifier" in group_learning_rates:
+            row["classifier_learning_rate"] = group_learning_rates["classifier"]
         history.append(row)
         write_history_csv(history_path, history)
         write_history_csv(metrics_path, history)
@@ -371,6 +403,13 @@ def main(
         "best_val_macro_f1": best_row["val_macro_f1"],
         "total_parameters": total_parameters,
         "trainable_parameters": trainable_parameter_count,
+        "initial_checkpoint": (
+            str(settings["initial_checkpoint"]) if settings["initial_checkpoint"] is not None else None
+        ),
+        "initial_checkpoint_verified": initial_checkpoint_verified,
+        "initial_checkpoint_epoch": initial_checkpoint_epoch,
+        "trainable_feature_blocks": trainable_feature_block_indices(model),
+        "optimizer_parameter_groups": optimizer_group_summary,
         "amp_enabled": amp_enabled,
         "early_stopping_patience": settings["early_stopping_patience"],
         "early_stopped": early_stopped,
@@ -452,6 +491,69 @@ def save_training_curves(output_dir: Path, history: list[dict[str, Any]]) -> Non
         plt.close()
 
 
+def build_optimizer(
+    model: nn.Module,
+    settings: dict[str, Any],
+) -> tuple[torch.optim.AdamW, list[dict[str, Any]]]:
+    feature_learning_rate = settings["feature_learning_rate"]
+    classifier_learning_rate = settings["classifier_learning_rate"]
+
+    if feature_learning_rate is None and classifier_learning_rate is None:
+        parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+        groups = [{"params": parameters, "lr": settings["learning_rate"], "name": "default"}]
+    else:
+        if feature_learning_rate is None or classifier_learning_rate is None:
+            raise ValueError(
+                "feature_learning_rate and classifier_learning_rate must be configured together."
+            )
+        if not hasattr(model, "features") or not hasattr(model, "classifier"):
+            raise ValueError("Differential learning rates require model.features and model.classifier.")
+
+        feature_parameters = [
+            parameter for parameter in model.features.parameters() if parameter.requires_grad
+        ]
+        classifier_parameters = [
+            parameter for parameter in model.classifier.parameters() if parameter.requires_grad
+        ]
+        if not feature_parameters or not classifier_parameters:
+            raise ValueError("Both differential-learning-rate parameter groups must be non-empty.")
+
+        grouped_parameter_ids = {
+            id(parameter) for parameter in [*feature_parameters, *classifier_parameters]
+        }
+        trainable_parameter_ids = {
+            id(parameter) for parameter in model.parameters() if parameter.requires_grad
+        }
+        if grouped_parameter_ids != trainable_parameter_ids:
+            raise ValueError("Optimizer parameter groups do not cover every trainable parameter exactly.")
+
+        groups = [
+            {"params": feature_parameters, "lr": feature_learning_rate, "name": "features"},
+            {"params": classifier_parameters, "lr": classifier_learning_rate, "name": "classifier"},
+        ]
+
+    optimizer = torch.optim.AdamW(groups, weight_decay=settings["weight_decay"])
+    group_summary = [
+        {
+            "name": str(group["name"]),
+            "parameter_count": sum(parameter.numel() for parameter in group["params"]),
+            "initial_learning_rate": float(group["lr"]),
+        }
+        for group in groups
+    ]
+    return optimizer, group_summary
+
+
+def trainable_feature_block_indices(model: nn.Module) -> list[int]:
+    if not hasattr(model, "features"):
+        return []
+    return [
+        index
+        for index, block in enumerate(model.features)
+        if any(parameter.requires_grad for parameter in block.parameters())
+    ]
+
+
 def make_loader(
     samples: list[tuple[Path, str]],
     class_to_idx: dict[str, int],
@@ -508,6 +610,8 @@ def parse_args(default_config: Path = Path("configs/baseline.yaml")) -> argparse
 def build_settings(args: argparse.Namespace) -> dict[str, Any]:
     config = load_config(args.config)
     configured_patience = nested(config, "training", "early_stopping_patience")
+    configured_feature_lr = nested(config, "training", "feature_learning_rate")
+    configured_classifier_lr = nested(config, "training", "classifier_learning_rate")
 
     settings = {
         "zip_path": Path(pick(args.zip_path, nested(config, "dataset", "zip_path"), "data/raw/5061353/leafsnap-dataset-30subset.zip")),
@@ -523,11 +627,18 @@ def build_settings(args: argparse.Namespace) -> dict[str, Any]:
         "pretrained": bool(pick(None, nested(config, "model", "pretrained"), False)),
         "fine_tune_mode": str(pick(None, nested(config, "model", "fine_tune_mode"), "full")),
         "unfreeze_blocks": int(pick(None, nested(config, "model", "unfreeze_blocks"), 4)),
+        "initial_checkpoint": optional_path(nested(config, "model", "initial_checkpoint")),
         "image_size": int(pick(args.image_size, nested(config, "model", "image_size"), 128)),
         "normalization": str(pick(None, nested(config, "dataset", "normalization"), "baseline")),
         "epochs": int(pick(args.epochs, nested(config, "training", "epochs"), 20)),
         "batch_size": int(pick(args.batch_size, nested(config, "training", "batch_size"), 32)),
         "learning_rate": float(pick(args.learning_rate, nested(config, "training", "learning_rate"), 1e-3)),
+        "feature_learning_rate": (
+            float(configured_feature_lr) if configured_feature_lr is not None else None
+        ),
+        "classifier_learning_rate": (
+            float(configured_classifier_lr) if configured_classifier_lr is not None else None
+        ),
         "weight_decay": float(pick(args.weight_decay, nested(config, "training", "weight_decay"), 1e-4)),
         "val_ratio": float(pick(args.val_ratio, nested(config, "dataset", "val_ratio"), 0.15)),
         "test_ratio": float(pick(args.test_ratio, nested(config, "dataset", "test_ratio"), 0.15)),
