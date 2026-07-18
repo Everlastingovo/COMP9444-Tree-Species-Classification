@@ -1,0 +1,3 @@
+experiment,trainable_scope,learning_rate,epochs,best_epoch,val_accuracy,val_macro_f1,val_weighted_f1,val_top5_accuracy,evaluation_scope,test_evaluated
+EfficientNet-B0 frozen head,head,0.001,5,5,0.949119373776908,,,,validation_only,False
+EfficientNet-B0 fine-tuned,last_blocks,3e-05,10,9,0.9716242661448141,0.9707974143039351,0.9714776335282521,0.9990215264187867,validation_only,False

@@ -35,7 +35,27 @@ EXPERIMENTS = [
     },
 ]
 
+EFFICIENTNET_EXPERIMENTS = [
+    {
+        "name": "EfficientNet-B0 frozen head",
+        "scope": "head",
+        "learning_rate": 1e-3,
+        "history": Path("outputs/efficientnet_b0/frozen/history.csv"),
+    },
+    {
+        "name": "EfficientNet-B0 fine-tuned",
+        "scope": "last_blocks",
+        "learning_rate": 3e-5,
+        "history": Path("outputs/efficientnet_b0/finetune/history.csv"),
+        "validation_metrics": Path(
+            "outputs/efficientnet_b0/finetune/validation/metrics.json"
+        ),
+    },
+]
+
 FIGURE_DIR = Path("report/figures/resnet18")
+EFFICIENTNET_FIGURE_DIR = Path("report/figures/efficientnet_b0")
+TABLE_DIR = Path("report/tables")
 OUTPUT_DIR = Path("outputs/resnet18")
 TEST_PER_CLASS_PATH = Path(
     "outputs/resnet18/layer4_lr3e5/test/per_class_metrics.csv"
@@ -60,6 +80,11 @@ def require_files() -> None:
         )
         if "test_metrics" in experiment:
             required.append(experiment["test_metrics"])
+
+    for experiment in EFFICIENTNET_EXPERIMENTS:
+        required.append(experiment["history"])
+        if "validation_metrics" in experiment:
+            required.append(experiment["validation_metrics"])
 
     missing = [path for path in required if not path.is_file()]
     if missing:
@@ -102,12 +127,89 @@ def build_experiment_table() -> list[dict[str, str | int | float]]:
             )
         rows.append(row)
 
-    path = OUTPUT_DIR / "experiments.csv"
+    write_table(OUTPUT_DIR / "experiments.csv", rows)
+    write_table(TABLE_DIR / "resnet18_experiments.csv", rows)
+    return rows
+
+
+def write_table(path: Path, rows: list[dict]) -> None:
+    """Write dictionaries to a CSV file with a stable header."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=rows[0].keys())
+        writer = csv.DictWriter(
+            file,
+            fieldnames=rows[0].keys(),
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(rows)
+
+
+def build_efficientnet_table() -> list[dict[str, str | int | float]]:
+    """Build validation-only EfficientNet-B0 experiment rows."""
+    rows = []
+    for experiment in EFFICIENTNET_EXPERIMENTS:
+        history = read_csv(experiment["history"])
+        best_history_row = max(history, key=lambda row: float(row["val_accuracy"]))
+        validation = (
+            read_json(experiment["validation_metrics"])
+            if "validation_metrics" in experiment
+            else None
+        )
+        rows.append(
+            {
+                "experiment": experiment["name"],
+                "trainable_scope": experiment["scope"],
+                "learning_rate": experiment["learning_rate"],
+                "epochs": len(history),
+                "best_epoch": int(best_history_row["epoch"]),
+                "val_accuracy": (
+                    validation["accuracy"]
+                    if validation is not None
+                    else float(best_history_row["val_accuracy"])
+                ),
+                "val_macro_f1": (
+                    validation["macro_f1"] if validation is not None else ""
+                ),
+                "val_weighted_f1": (
+                    validation["weighted_f1"] if validation is not None else ""
+                ),
+                "val_top5_accuracy": (
+                    validation["top5_accuracy"] if validation is not None else ""
+                ),
+                "evaluation_scope": "validation_only",
+                "test_evaluated": False,
+            }
+        )
+
+    write_table(TABLE_DIR / "efficientnet_b0_experiments.csv", rows)
     return rows
+
+
+def write_resnet_test_tables() -> None:
+    """Copy the locked ResNet18 test metrics into tracked report tables."""
+    test_metrics = read_json(EXPERIMENTS[-1]["test_metrics"])
+    metric_fields = [
+        "num_samples",
+        "accuracy",
+        "macro_precision",
+        "macro_recall",
+        "macro_f1",
+        "weighted_precision",
+        "weighted_recall",
+        "weighted_f1",
+        "top5_accuracy",
+        "checkpoint",
+        "config",
+    ]
+    write_table(
+        TABLE_DIR / "resnet18_final_test_metrics.csv",
+        [{field: test_metrics[field] for field in metric_fields}],
+    )
+    write_table(
+        TABLE_DIR / "resnet18_test_per_class_metrics.csv",
+        read_csv(TEST_PER_CLASS_PATH),
+    )
 
 
 def plot_training_curves() -> None:
@@ -182,7 +284,11 @@ def plot_test_per_class_f1() -> None:
 
     ranked_path = OUTPUT_DIR / "test_per_class_ranked.csv"
     with ranked_path.open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=rows[0].keys())
+        writer = csv.DictWriter(
+            file,
+            fieldnames=rows[0].keys(),
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(rows)
 
@@ -201,19 +307,109 @@ def plot_test_per_class_f1() -> None:
     plt.close(fig)
 
 
+def plot_efficientnet_training_curves() -> None:
+    """Plot frozen and fine-tuned EfficientNet-B0 histories."""
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8), constrained_layout=True)
+    for row_index, experiment in enumerate(EFFICIENTNET_EXPERIMENTS):
+        history = read_csv(experiment["history"])
+        epochs = [int(row["epoch"]) for row in history]
+        train_loss = [float(row["train_loss"]) for row in history]
+        val_loss = [float(row["val_loss"]) for row in history]
+        train_accuracy = [float(row["train_accuracy"]) * 100 for row in history]
+        val_accuracy = [float(row["val_accuracy"]) * 100 for row in history]
+
+        axes[row_index, 0].plot(epochs, train_loss, marker="o", label="Train")
+        axes[row_index, 0].plot(epochs, val_loss, marker="s", label="Validation")
+        axes[row_index, 0].set_title(f"{experiment['name']} - Loss")
+        axes[row_index, 0].set_ylabel("Cross-entropy loss")
+
+        axes[row_index, 1].plot(epochs, train_accuracy, marker="o", label="Train")
+        axes[row_index, 1].plot(epochs, val_accuracy, marker="s", label="Validation")
+        axes[row_index, 1].set_title(f"{experiment['name']} - Accuracy")
+        axes[row_index, 1].set_ylabel("Accuracy (%)")
+
+        for axis in axes[row_index]:
+            axis.set_xlabel("Epoch")
+            axis.set_xticks(epochs)
+            axis.grid(alpha=0.25)
+            axis.legend()
+
+    fig.suptitle("EfficientNet-B0 Training and Validation Curves", fontsize=16)
+    fig.savefig(
+        EFFICIENTNET_FIGURE_DIR / "efficientnet_b0_training_curves.png",
+        dpi=300,
+    )
+    plt.close(fig)
+
+
+def plot_model_validation_comparison(
+    resnet_rows: list[dict[str, str | int | float]],
+    efficientnet_rows: list[dict[str, str | int | float]],
+) -> None:
+    """Compare locked ResNet18 and validation-only EfficientNet-B0 results."""
+    resnet = resnet_rows[-1]
+    efficientnet = efficientnet_rows[-1]
+    names = ["ResNet18", "EfficientNet-B0\n(validation only)"]
+    accuracies = [
+        float(resnet["val_accuracy"]) * 100,
+        float(efficientnet["val_accuracy"]) * 100,
+    ]
+    macro_f1 = [
+        float(resnet["val_macro_f1"]) * 100,
+        float(efficientnet["val_macro_f1"]) * 100,
+    ]
+
+    x_positions = [0, 1]
+    width = 0.34
+    fig, axis = plt.subplots(figsize=(8, 5.5), constrained_layout=True)
+    accuracy_bars = axis.bar(
+        [position - width / 2 for position in x_positions],
+        accuracies,
+        width=width,
+        label="Validation accuracy",
+    )
+    f1_bars = axis.bar(
+        [position + width / 2 for position in x_positions],
+        macro_f1,
+        width=width,
+        label="Validation Macro-F1",
+    )
+    axis.bar_label(accuracy_bars, fmt="%.2f", padding=3)
+    axis.bar_label(f1_bars, fmt="%.2f", padding=3)
+    axis.set_title("Transfer Model Validation Comparison")
+    axis.set_ylabel("Score (%)")
+    axis.set_xticks(x_positions, names)
+    axis.set_ylim(95, 100)
+    axis.grid(axis="y", alpha=0.25)
+    axis.legend()
+    fig.savefig(
+        EFFICIENTNET_FIGURE_DIR / "transfer_model_validation_comparison.png",
+        dpi=300,
+    )
+    plt.close(fig)
+
+
 def main() -> None:
     require_files()
     FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+    EFFICIENTNET_FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+    TABLE_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     experiment_rows = build_experiment_table()
+    efficientnet_rows = build_efficientnet_table()
+    write_resnet_test_tables()
     plot_training_curves()
     plot_validation_comparison(experiment_rows)
     plot_test_per_class_f1()
+    plot_efficientnet_training_curves()
+    plot_model_validation_comparison(experiment_rows, efficientnet_rows)
 
     print(f"Experiment table: {OUTPUT_DIR / 'experiments.csv'}")
     print(f"Ranked per-class table: {OUTPUT_DIR / 'test_per_class_ranked.csv'}")
     print(f"Figures: {FIGURE_DIR}")
+    print(f"EfficientNet-B0 figures: {EFFICIENTNET_FIGURE_DIR}")
+    print(f"Tracked tables: {TABLE_DIR}")
     print("No model training or dataset evaluation was performed.")
 
 

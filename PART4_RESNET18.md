@@ -2,108 +2,94 @@
 
 ## Responsibility and scope
 
-Part 4 implements and evaluates a ResNet18 transfer-learning model for the 30-class Leafsnap tree-species classification task. The work covers model construction, staged fine-tuning, controlled learning-rate comparison, checkpoint selection, validation and final test evaluation, result visualisation, and handoff materials.
+Part 4 implements and evaluates a ResNet18 transfer-learning model for the 30-class Leafsnap tree-species classification task. The implementation uses the TorchVision architecture and ImageNet weights, then adds project-specific classifier replacement, staged fine-tuning, frozen BatchNorm handling, fixed-split integration, checkpoint transfer, multi-class evaluation, and reproducible reporting.
 
-The implementation builds on the ResNet18 architecture and ImageNet weights provided by TorchVision. The project-specific work includes replacing the classifier, controlling trainable layers, preserving frozen BatchNorm statistics, integrating the fixed Part 2 data splits, applying ImageNet normalisation, loading checkpoints between training stages, calculating multi-class metrics, and generating reproducible result tables and figures.
+All results in this document were regenerated after Part 2 corrected exact-content leakage, restored omitted laboratory images, and relocked the dataset splits. Results from the superseded 7,239-image split are not used.
 
-## Data and preprocessing
-
-All experiments use the fixed Part 2 split files and class mapping. No split was regenerated during Part 4.
+## Corrected data and preprocessing
 
 | Split | Images |
 |---|---:|
-| Training | 5,070 |
-| Validation | 1,094 |
-| Test | 1,075 |
-| Total | 7,239 |
+| Training | 4,734 |
+| Validation | 1,022 |
+| Test | 1,001 |
+| **Total** | **6,757** |
 
-The model input is 224 x 224 RGB. Training images use the shared augmentation pipeline. Validation and test images use deterministic resizing and padding without random augmentation. ResNet18 uses ImageNet normalisation:
+The corrected split contains 30 classes and has no path or SHA-256 content overlap between train, validation, and test. Part 4 reused the checked-in split files without regeneration.
+
+Inputs are 224 x 224 RGB images. Training uses the shared augmentation pipeline; validation and test use deterministic preprocessing. ImageNet normalisation is applied:
 
 ```text
 mean = [0.485, 0.456, 0.406]
 std  = [0.229, 0.224, 0.225]
 ```
 
-The original standard normalisation remains available as the default for the custom CNN baseline, so the transfer-learning change does not silently alter existing baseline behaviour.
-
 ## Model implementation
 
-The model is created with `torchvision.models.ResNet18_Weights.DEFAULT`. Its original 1,000-class fully connected layer is replaced with a 30-class layer.
+The model is created with `torchvision.models.ResNet18_Weights.DEFAULT`. The original 1,000-class fully connected layer is replaced by a 30-class layer.
 
 The implementation supports three trainable scopes:
 
-- `head`: train only the final fully connected layer.
+- `head`: train only the final classifier.
 - `layer4`: train the final residual block and classifier.
-- `all`: fine-tune the entire network.
+- `all`: fine-tune the complete network.
 
-The 30-class model contains 11,191,902 total parameters. The frozen-head stage has 15,390 trainable parameters, while the Layer4 stage has 8,409,118 trainable parameters. Frozen BatchNorm modules remain in evaluation mode during training so that their running statistics are not updated unintentionally.
+The adapted model contains 11,191,902 parameters. The frozen-head stage has 15,390 trainable parameters; the Layer4 stage has 8,409,118. Frozen BatchNorm modules remain in evaluation mode during training so their running statistics do not change unintentionally.
 
-## Experimental design
+## Controlled experiments
 
-All experiments use the same split, class mapping, seed, input size, augmentation, normalisation, batch size, and weight decay. The controlled comparison changes only the trainable scope or Layer4 learning rate.
+All experiments use seed 42, batch size 16, weight decay `1e-4`, 224 x 224 inputs, identical augmentation, ImageNet normalisation, and the same corrected splits. Only the trainable scope or Layer4 learning rate changes.
 
 | Experiment | Scope | Learning rate | Epochs | Best epoch | Validation accuracy | Validation Macro-F1 |
 |---|---|---:|---:|---:|---:|---:|
-| Frozen head | Head only | 1e-3 | 5 | 4 | 89.49% | 89.26% |
-| Layer4 | Layer4 + head | 1e-4 | 10 | 7 | 95.98% | 95.90% |
-| Layer4 low LR | Layer4 + head | 3e-5 | 10 | 10 | **96.44%** | **96.08%** |
+| Frozen head | Head only | 1e-3 | 5 | 4 | 89.73% | 89.67% |
+| Layer4 | Layer4 + head | 1e-4 | 10 | 10 | 96.77% | 96.69% |
+| Layer4 low LR | Layer4 + head | 3e-5 | 10 | 9 | **97.06%** | **97.03%** |
 
-The Layer4 stages start from the best frozen-head checkpoint. Model selection uses validation performance only. The test set was evaluated once after the `3e-5` model was selected as the final checkpoint.
+Both Layer4 runs start from the best corrected-data frozen checkpoint. The `3e-5` checkpoint was selected using validation results before final test evaluation.
 
-## Final test results
+## Locked final test result
 
-The selected checkpoint is:
+Selected checkpoint:
 
 ```text
 outputs/resnet18/layer4_lr3e5/best_model.pt
 ```
 
-Final test metrics on 1,075 images are:
+The checkpoint was evaluated once on the corrected 1,001-image test split. No model or hyperparameter selection occurred after observing the result.
 
 | Metric | Score |
 |---|---:|
-| Accuracy | 95.53% |
-| Macro Precision | 96.47% |
-| Macro Recall | 95.29% |
-| Macro-F1 | 95.39% |
-| Weighted Precision | 96.22% |
-| Weighted Recall | 95.53% |
-| Weighted-F1 | 95.39% |
-| Top-5 Accuracy | 100.00% |
+| Accuracy | **97.10%** |
+| Macro Precision | 97.31% |
+| Macro Recall | 97.24% |
+| Macro-F1 | **97.22%** |
+| Weighted Precision | 97.22% |
+| Weighted Recall | 97.10% |
+| Weighted-F1 | **97.11%** |
+| Top-5 Accuracy | 99.80% |
 
-The validation-to-test accuracy gap is 0.91 percentage points, and the Macro-F1 gap is 0.69 percentage points. These small gaps indicate that the selected model generalises well to the held-out test set.
+Test accuracy is 0.04 percentage points above validation accuracy, and test Macro-F1 is 0.20 points above validation Macro-F1. The close results indicate stable held-out performance.
 
 ## Per-class observations
 
-Most species achieve high test F1 scores, but five classes are notably weaker:
+The five lowest test F1 scores are:
 
 | Species | Precision | Recall | F1 | Support |
 |---|---:|---:|---:|---:|
-| `quercus_muehlenbergii` | 100.00% | 47.06% | 64.00% | 34 |
-| `prunus_sargentii` | 67.74% | 100.00% | 80.77% | 42 |
-| `ostrya_virginiana` | 82.86% | 87.88% | 85.29% | 33 |
-| `ulmus_americana` | 92.86% | 81.25% | 86.67% | 32 |
-| `catalpa_bignonioides` | 100.00% | 81.25% | 89.66% | 32 |
+| `ulmus_americana` | 87.10% | 84.38% | 85.71% | 32 |
+| `diospyros_virginiana` | 88.10% | 97.37% | 92.50% | 38 |
+| `ostrya_virginiana` | 86.11% | 100.00% | 92.54% | 31 |
+| `styrax_japonica` | 91.89% | 94.44% | 93.15% | 36 |
+| `ulmus_rubra` | 97.78% | 89.80% | 93.62% | 49 |
 
-`quercus_muehlenbergii` is the main failure class. Its perfect precision but low recall means predictions assigned to this class are reliable, but many true examples are classified as other species. `prunus_sargentii` shows the opposite pattern: perfect recall but lower precision, indicating that examples from other classes are sometimes assigned to it. These classes should receive priority in the group's confusion-matrix and error-analysis work.
+`ulmus_americana` is the weakest class and has both imperfect precision and recall, suggesting confusion in both directions. `ostrya_virginiana` has perfect recall but lower precision, so other species are sometimes assigned to it. These classes are suitable priorities for confusion-matrix inspection and explainability work.
 
-## Reproducible commands
-
-Frozen-head training:
+## Reproducibility
 
 ```bash
 python part4_resnet18.py --config configs/resnet18_frozen.yaml
-```
-
-Layer4 training with learning rate `1e-4`:
-
-```bash
 python part4_resnet18.py --config configs/resnet18_layer4.yaml
-```
-
-Layer4 training with learning rate `3e-5`:
-
-```bash
 python part4_resnet18.py --config configs/resnet18_layer4_lr3e5.yaml
 ```
 
@@ -113,13 +99,13 @@ Validation evaluation is the default:
 python part4_evaluate_resnet18.py
 ```
 
-The final test command is recorded for reproducibility but must not be rerun for further model selection:
+The final test command is recorded only for provenance and must not be rerun for model selection:
 
 ```bash
 python part4_evaluate_resnet18.py --split test
 ```
 
-Generate tables and figures from saved results without loading a dataset or running a model:
+Saved results can be converted into tracked tables and figures without model or dataset evaluation:
 
 ```bash
 python part4_plot_results.py
@@ -127,42 +113,27 @@ python part4_plot_results.py
 
 ## Deliverables
 
-### Code and configuration
-
-- `src/models/resnet18.py`: model construction and trainable-scope control.
-- `src/data/transforms.py`: optional ImageNet normalisation.
-- `src/data/dataset.py`: normalisation selection through the dataset interface.
-- `src/training/trainer.py`: frozen BatchNorm handling.
-- `src/utils/device.py`: CUDA, MPS, and CPU device selection.
-- `part4_resnet18.py`: staged training entry point.
-- `part4_evaluate_resnet18.py`: validation and explicit final-test evaluation.
-- `part4_plot_results.py`: result table and figure generation.
-- `configs/resnet18_frozen.yaml`: frozen-head experiment.
-- `configs/resnet18_layer4.yaml`: Layer4 experiment with learning rate `1e-4`.
-- `configs/resnet18_layer4_lr3e5.yaml`: Layer4 experiment with learning rate `3e-5`.
-
-### Tracked result tables
-
+- `src/models/resnet18.py`
+- `part4_resnet18.py`
+- `part4_evaluate_resnet18.py`
+- `part4_plot_results.py`
+- `configs/resnet18_frozen.yaml`
+- `configs/resnet18_layer4.yaml`
+- `configs/resnet18_layer4_lr3e5.yaml`
 - `report/tables/resnet18_experiments.csv`
 - `report/tables/resnet18_final_test_metrics.csv`
 - `report/tables/resnet18_test_per_class_metrics.csv`
-
-### Tracked figures
-
 - `report/figures/resnet18/resnet18_training_curves.png`
 - `report/figures/resnet18/resnet18_validation_comparison.png`
 - `report/figures/resnet18/resnet18_test_per_class_f1.png`
 
-Checkpoints and detailed local predictions remain under `outputs/resnet18/` and are ignored by Git because they are large or machine-specific artifacts.
+Checkpoints and detailed predictions remain under `outputs/resnet18/` and are ignored by Git.
 
-## Limitations and future work
+## Limitations and handoff
 
-- The model still struggles with a small number of visually similar species, especially `quercus_muehlenbergii`.
-- The dataset contains both controlled laboratory images and real-world field images. A separate source-level evaluation is needed to quantify the domain gap.
-- The selected model was tuned on a small, controlled set of configurations rather than an exhaustive hyperparameter search.
-- The final group analysis should include confusion matrices, representative error cases, and Grad-CAM visualisations.
-- Training-time measurements were not captured consistently across all experiments and should not be compared without rerunning under a controlled timing protocol.
+- Laboratory and field performance has not been reported separately.
+- Only a small controlled hyperparameter set was explored.
+- Runtime was not captured consistently and should not be compared retrospectively.
+- The final group analysis can add source-level metrics, confusion examples, and Grad-CAM visualisations without using the locked test set for additional tuning.
 
-## Handoff notes
-
-The final model was selected using validation Accuracy and Macro-F1. The test set was then evaluated once and was not used for further tuning. Member 5 can use the tracked per-class table and local prediction file for confusion analysis, error inspection, and explainability work. The ResNet18 material should be merged into the group's single final Project Notebook rather than submitted as a separate notebook.
+This material must be integrated into the group's single final Project Notebook rather than submitted as a separate notebook.
