@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.data.build_metadata import extract_dataset, write_class_mapping, write_image_metadata
-from src.data.dataset import LeafDataset, collect_image_paths
+from src.data.dataset import LeafDataset, collect_image_paths, load_samples_from_csv
 from src.data.split_dataset import stratified_split, write_dataset_split_csv, write_split_csvs
 from src.models.baseline_cnn import CustomCNN
 from src.training.losses import build_classification_loss
@@ -76,27 +76,41 @@ def main() -> None:
     if not images_root.exists():
         raise FileNotFoundError(f"Images root not found: {images_root}")
 
-    samples = collect_image_paths(images_root, settings["image_source"])
-    classes = sorted({label for _, label in samples})
-    class_to_idx = {class_name: index for index, class_name in enumerate(classes)}
-    train_samples, val_samples, test_samples = stratified_split(
-        samples,
-        settings["val_ratio"],
-        settings["test_ratio"],
-        settings["seed"],
-    )
-    splits = {"train": train_samples, "val": val_samples, "test": test_samples}
+    if settings["use_splits"]:
+        split_dir = settings["split_dir"]
+        train_samples = load_samples_from_csv(split_dir / "train.csv")
+        val_samples = load_samples_from_csv(split_dir / "val.csv")
+        test_samples = load_samples_from_csv(split_dir / "test.csv")
+        samples = [*train_samples, *val_samples, *test_samples]
+        classes = sorted({label for _, label in samples})
+        class_to_idx = {class_name: index for index, class_name in enumerate(classes)}
+        splits = {"train": train_samples, "val": val_samples, "test": test_samples}
+    else:
+        samples = collect_image_paths(images_root, settings["image_source"])
+        classes = sorted({label for _, label in samples})
+        class_to_idx = {class_name: index for index, class_name in enumerate(classes)}
+        train_samples, val_samples, test_samples = stratified_split(
+            samples,
+            settings["val_ratio"],
+            settings["test_ratio"],
+            settings["seed"],
+        )
+        splits = {"train": train_samples, "val": val_samples, "test": test_samples}
+        # data/splits and data/metadata are the locked, shared data foundation
+        # (owned by the data-prep step) — only regenerate them here when this
+        # run is doing its own ad-hoc split, never when reusing --use-splits.
+        write_split_csvs(Path("data/splits"), splits)
+        write_class_mapping(Path("data/metadata/class_to_idx.json"), class_to_idx)
+        write_image_metadata(Path("data/metadata/images.csv"), samples, class_to_idx)
 
+    image_source_label = "all (from data/splits)" if settings["use_splits"] else settings["image_source"]
     print(f"Device: {device}")
-    print(f"Image source: {settings['image_source']}")
+    print(f"Image source: {image_source_label}")
     print(f"Classes: {len(classes)}")
     print(f"Images: train={len(train_samples)}, val={len(val_samples)}, test={len(test_samples)}")
 
     write_dataset_split_csv(settings["output_dir"] / "dataset_split.csv", splits)
-    write_split_csvs(Path("data/splits"), splits)
     write_class_mapping(settings["output_dir"] / "class_to_idx.json", class_to_idx)
-    write_class_mapping(Path("data/metadata/class_to_idx.json"), class_to_idx)
-    write_image_metadata(Path("data/metadata/images.csv"), samples)
 
     train_loader = make_loader(train_samples, class_to_idx, settings, training=True, device=device)
     val_loader = make_loader(val_samples, class_to_idx, settings, training=False, device=device)
@@ -205,7 +219,7 @@ def make_loader(
     device: torch.device,
 ) -> DataLoader:
     return DataLoader(
-        LeafDataset(samples, class_to_idx, settings["image_size"], training=training),
+        LeafDataset(samples, class_to_idx, settings["image_size"], training=training, augment=not settings["no_augmentation"]),
         batch_size=settings["batch_size"],
         shuffle=training,
         num_workers=settings["num_workers"],
@@ -220,6 +234,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--zip-path", type=Path, default=None)
     parser.add_argument("--extract-root", type=Path, default=None)
     parser.add_argument("--image-source", choices=["field", "lab", "all"], default=None)
+    parser.add_argument("--use-splits", action="store_true", help="Load train/val/test samples from data/splits CSV files.")
+    parser.add_argument("--split-dir", type=Path, default=None, help="Directory containing train.csv, val.csv, and test.csv")
+    parser.add_argument("--no-augmentation", action="store_true", help="Disable training-time augmentation for a deterministic baseline.")
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--image-size", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=None)
@@ -242,6 +259,9 @@ def build_settings(args: argparse.Namespace) -> dict[str, Any]:
         "extract_root": Path(pick(args.extract_root, nested(config, "dataset", "extract_root"), "data/raw/5061353")),
         "images_root": optional_path(pick(args.images_root, nested(config, "dataset", "images_root"), None)),
         "image_source": pick(args.image_source, nested(config, "dataset", "image_source"), "field"),
+        "use_splits": args.use_splits,
+        "split_dir": Path(pick(args.split_dir, None, "data/splits")),
+        "no_augmentation": args.no_augmentation,
         "output_dir": Path(pick(args.output_dir, nested(config, "output", "dir"), "outputs/baseline")),
         "image_size": int(pick(args.image_size, nested(config, "model", "image_size"), 128)),
         "epochs": int(pick(args.epochs, nested(config, "training", "epochs"), 20)),
