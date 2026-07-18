@@ -109,17 +109,21 @@ def main() -> None:
             settings["seed"],
         )
         splits = {"train": train_samples, "val": val_samples, "test": test_samples}
+        # data/splits and data/metadata are the locked, shared data foundation
+        # (owned by the data-prep step) — only regenerate them here when this
+        # run is doing its own ad-hoc split, never when reusing --use-splits.
+        write_split_csvs(Path("data/splits"), splits)
+        write_class_mapping(Path("data/metadata/class_to_idx.json"), class_to_idx)
+        write_image_metadata(Path("data/metadata/images.csv"), samples, class_to_idx)
 
+    image_source_label = "all (from data/splits)" if settings["use_splits"] else settings["image_source"]
     print(f"Device: {device}")
-    print(f"Image source: {settings['image_source']}")
+    print(f"Image source: {image_source_label}")
     print(f"Classes: {len(classes)}")
     print(f"Images: train={len(train_samples)}, val={len(val_samples)}, test={len(test_samples)}")
 
     write_dataset_split_csv(settings["output_dir"] / "dataset_split.csv", splits)
-    write_split_csvs(Path("data/splits"), splits)
     write_class_mapping(settings["output_dir"] / "class_to_idx.json", class_to_idx)
-    write_class_mapping(Path("data/metadata/class_to_idx.json"), class_to_idx)
-    write_image_metadata(Path("data/metadata/images.csv"), samples, class_to_idx)
 
     train_loader = make_loader(train_samples, class_to_idx, settings, training=True, device=device)
     val_loader = make_loader(val_samples, class_to_idx, settings, training=False, device=device)

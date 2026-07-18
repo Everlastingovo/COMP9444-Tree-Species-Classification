@@ -99,11 +99,11 @@ def stratified_group_split(
 def write_dataset_split_csv(path: Path, splits: dict[str, list[tuple[Path, str]]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as csv_file:
-        writer = csv.writer(csv_file)
+        writer = csv.writer(csv_file, lineterminator="\n")
         writer.writerow(["split", "path", "label"])
         for split_name, samples in splits.items():
             for image_path, label in samples:
-                writer.writerow([split_name, str(image_path), label])
+                writer.writerow([split_name, image_path.as_posix(), label])
 
 
 def write_split_csvs(split_dir: Path, splits: dict[str, list[tuple[Path, str]]]) -> None:
@@ -111,7 +111,7 @@ def write_split_csvs(split_dir: Path, splits: dict[str, list[tuple[Path, str]]])
     for split_name, samples in splits.items():
         path = split_dir / f"{split_name}.csv"
         with path.open("w", newline="", encoding="utf-8") as csv_file:
-            writer = csv.writer(csv_file)
+            writer = csv.writer(csv_file, lineterminator="\n")
             writer.writerow(["path", "label"])
             for image_path, label in samples:
-                writer.writerow([str(image_path), label])
+                writer.writerow([image_path.as_posix(), label])

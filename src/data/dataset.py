@@ -1,4 +1,5 @@
 import csv
+import os
 from pathlib import Path
 
 import torch
@@ -9,6 +10,8 @@ from src.data.transforms import LeafImageTransform, Normalization
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp"}
+DEFAULT_DATA_ROOT = Path("data/raw/5061353/leafsnap-dataset-30subset")
+DATA_ROOT_ENV = "LEAFSNAP_DATA_ROOT"
 
 
 def collect_image_paths(images_root: Path, image_source: str) -> list[tuple[Path, str]]:
@@ -42,12 +45,25 @@ def collect_image_paths(images_root: Path, image_source: str) -> list[tuple[Path
     return samples
 
 
-def load_samples_from_csv(csv_path: Path) -> list[tuple[Path, str]]:
+def resolve_data_root(data_root: Path | None = None) -> Path:
+    if data_root is not None:
+        return Path(data_root)
+    configured_root = os.environ.get(DATA_ROOT_ENV)
+    return Path(configured_root) if configured_root else DEFAULT_DATA_ROOT
+
+
+def resolve_image_path(image_path: Path, data_root: Path | None = None) -> Path:
+    if image_path.is_absolute():
+        return image_path
+    return resolve_data_root(data_root) / image_path
+
+
+def load_samples_from_csv(csv_path: Path, data_root: Path | None = None) -> list[tuple[Path, str]]:
     samples: list[tuple[Path, str]] = []
     with csv_path.open("r", newline="", encoding="utf-8") as csv_file:
         reader = csv.DictReader(csv_file)
         for row in reader:
-            image_path = Path(row["path"])
+            image_path = resolve_image_path(Path(row["path"]), data_root)
             label = row["label"]
             samples.append((image_path, label))
     return samples

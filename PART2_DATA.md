@@ -1,74 +1,95 @@
-# PART2 Notes
+# Part 2: Data Preparation and EDA
+
+## Locked data foundation
+
+The project uses the Leafsnap 30-species subset with both field images and cleaned
+`lab/Auto_cropped` images. Raw lab originals are never included alongside their cleaned versions.
+
+Current final counts:
+
+- Official manifest paths: 7,395
+- Unique SHA-256 content hashes before conflict exclusion: 6,823
+- Same-class duplicate paths removed: 400
+- Cross-class conflict groups excluded: 66 hashes / 238 images
+- Final unique-content images: 6,757
+- Classes: 30
+- Lab images: 5,108
+- Field images: 1,649
+- Train / validation / test: 4,734 / 1,022 / 1,001
+
+All models must reuse the checked-in split CSVs. Results trained on the earlier 7,239-image or
+7,395-path splits are not comparable with this final content-cleaned split.
 
 ## Data layout
 
-This project uses the Leafsnap 30-subset dataset with lab and field images.
+- `data/metadata/images.csv`: final `path,label,class_idx,source,sha256` rows
+- `data/metadata/class_to_idx.json`: fixed mapping for classes 0-29
+- `data/metadata/duplicate_same_class.csv`: removed same-label duplicates
+- `data/metadata/conflicting_labels.csv`: excluded cross-label hash groups
+- `data/metadata/image_quality.csv`: hash, dimensions, mode and aspect ratio
+- `data/metadata/data_quality_summary.json`: count reconciliation
+- `data/metadata/dataset_summary.csv`: final per-class/source counts
+- `data/metadata/split_audit.csv`: final per-split/class counts
+- `data/splits/{train,val,test}.csv`: locked split files
 
-Data structure:
+All paths in metadata and split files are relative to the Leafsnap subset root. The standard root is
+`data/raw/5061353/leafsnap-dataset-30subset`; another location can be supplied with `--data-root`
+or `LEAFSNAP_DATA_ROOT` as documented in `data/README.md`.
 
-- `data/raw/`: raw dataset archive and extracted images (ignored by Git)
-- `data/metadata/images.csv`: metadata rows with `path`, `label`, `class_idx`, and `source`
-- `data/metadata/class_to_idx.json`: mapping from class name to numeric label
-- `data/metadata/image_quality.csv`: image validity and size diagnostics
-- `data/metadata/data_quality_summary.json`: summary statistics for Part 2 analysis
-- `data/metadata/dataset_summary.csv`: species-level class counts by source
-- `data/metadata/split_audit.csv`: per-split class counts for audit
-- `data/splits/train.csv`: train split with canonical sample paths
-- `data/splits/val.csv`: validation split with canonical sample paths
-- `data/splits/test.csv`: test split with canonical sample paths
+## Cleaning rules
 
-Part 2 specifics:
+`src/data/build_metadata.py` first normalizes any official lab path missing `Auto_cropped` to the
+corresponding cleaned path. It then computes SHA-256 for all 7,395 normalized official images.
 
-- Uses `field` and `lab/Auto_cropped` images only
-- Builds a stratified group-aware split by species and stem ID
-- Includes 30 species classes
-- Total samples: 7,239 images
-- Lab images: 5,164
-- Field images: 2,075
+For one-class hash groups, the first official-manifest path is canonical and later paths are removed.
+For multi-class hash groups, no label is inferred: every member is excluded and written to the
+conflict audit. This is why the final count is 6,757 rather than 6,823.
 
-## What I completed
+The count identity is:
 
-- Parsed image metadata from the official list at `data/raw/5061353/leafsnap-dataset-30subset-images.txt`.
-- Filtered the dataset to keep only `field` images and `lab/Auto_cropped` images.
-- Generated `data/metadata/images.csv` with columns `path,label,class_idx,source`.
-- Generated `data/metadata/class_to_idx.json` with mappings for 30 species.
-- Created the dataset split files:
-  - `data/splits/train.csv`
-  - `data/splits/val.csv`
-  - `data/splits/test.csv`
-- Added audit summaries:
-  - `data/metadata/dataset_summary.csv` with per-class field/lab/total counts
-  - `data/metadata/split_audit.csv` with per-split class counts
-- Performed data quality checks and output:
-  - `data/metadata/image_quality.csv`
-  - `data/metadata/data_quality_summary.json`
-- Completed Part 2 EDA and saved visualizations to `report/figures/data/`.
+```text
+7,395 official paths - 400 same-class duplicate paths - 238 conflicting images = 6,757
+```
 
-## Current results
+## Split policy
 
-- Total samples: 7,239
-- Number of classes: 30
-- Lab images: 5,164
-- Field images: 2,075
-- The train/val/test splits are non-overlapping, and all split paths exist in `data/metadata/images.csv`.
+`part2_prepare_metadata.py` uses `stratified_group_split` with validation ratio 0.15, test ratio
+0.15 and seed 42. The group key retains known multiple-shot leaf samples in one split. After
+content cleaning:
 
-## What can be done next
+- every class appears in train, validation and test;
+- path overlap across splits is zero;
+- SHA-256 content overlap across splits is zero;
+- no final SHA-256 maps to more than one class.
 
-1. Use the existing split files for training:
-   - `data/splits/train.csv`
-   - `data/splits/val.csv`
-   - `data/splits/test.csv`
-2. Use the class mapping directly:
-   - `data/metadata/class_to_idx.json`
-3. For training, use the Part 1 script or other model code:
-   - `python3 part1_custom_cnn.py --use-splits --split-dir data/splits --output-dir outputs/part2_aug`
-4. Further analysis options:
-   - training result comparison
-   - augmentation comparison
-   - error analysis
-   - Grad-CAM / explainability analysis
+## Rebuild command
 
-## Notes
+Do not rebuild the locked files casually. If the team intentionally regenerates them, use the same
+official dataset and command:
 
-- I have finished Part 2 data cleaning and analysis.
-- Later team members do not need to redo Part 2 data preparation. They can use the existing `data/splits` and `data/metadata` files directly.
+```powershell
+python part2_prepare_metadata.py --data-root "D:\path\to\leafsnap-dataset-30subset"
+```
+
+Then run the integrity tests described in `data/README.md` and review both duplicate/conflict audit
+CSVs before accepting the new split.
+
+## EDA
+
+`notebooks/01_data_eda.ipynb` and `part2_data_eda.py` cover class distribution, source distribution,
+image dimensions, lab/field examples and augmentation examples. `part2_data_eda.py` accepts the same
+`--data-root` option so metadata paths remain machine-independent.
+
+## Change history
+
+### Restored 156 cleaned lab images
+
+The earlier parser silently dropped 156 official lab rows whose paths omitted `Auto_cropped`. Those
+rows are now normalized to their readable cleaned counterparts; raw ruler/color-card images are not
+used.
+
+### Removed exact-content leakage and label conflicts
+
+The 7,395 official paths contained 466 repeated-content hash groups. Same-class duplicates are now
+collapsed to the first manifest path, while 66 multi-class groups are excluded for manual audit.
+The resulting 6,757-image split has no exact-content leakage.
