@@ -1,0 +1,11 @@
+class_a,class_b,a_predicted_as_b,b_predicted_as_a,total_confusions
+ulmus_americana,ulmus_rubra,1,4,5
+ostrya_virginiana,ulmus_americana,0,4,4
+asimina_triloba,diospyros_virginiana,2,0,2
+chionanthus_virginicus,styrax_japonica,1,1,2
+diospyros_virginiana,styrax_japonica,1,1,2
+acer_palmatum,aesculus_pavi,0,1,1
+aesculus_pavi,staphylea_trifolia,0,1,1
+asimina_triloba,styrax_japonica,1,0,1
+broussonettia_papyrifera,juglans_cinerea,0,1,1
+broussonettia_papyrifera,prunus_sargentii,0,1,1
