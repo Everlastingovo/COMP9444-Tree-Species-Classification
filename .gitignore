@@ -10,4 +10,4 @@ __pycache__/
 *.h5
 *.pt
 *.pth
-.DS_Store
+.DS_Store/reselection_20260727_run1/outputs/

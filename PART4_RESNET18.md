@@ -2,9 +2,9 @@
 
 ## Responsibility and scope
 
-Part 4 implements and evaluates a ResNet18 transfer-learning model for the 30-class Leafsnap tree-species classification task. The implementation uses the TorchVision architecture and ImageNet weights, then adds project-specific classifier replacement, staged fine-tuning, frozen BatchNorm handling, fixed-split integration, checkpoint transfer, multi-class evaluation, and reproducible reporting.
+Part 4 implements ResNet18 transfer learning for the 30-class Leafsnap tree-species classification task. The work includes TorchVision model adaptation, classifier replacement, staged checkpoint transfer, trainable-scope control, frozen BatchNorm handling, ImageNet normalisation, MPS support, multi-class evaluation, and reproducible reporting.
 
-All results in this document were regenerated after Part 2 corrected exact-content leakage, restored omitted laboratory images, and relocked the dataset splits. Results from the superseded 7,239-image split are not used.
+The final model-selection workflow is stored separately under `reselection_20260727_run1`. This isolated run preserves earlier experiment artifacts while ensuring that ResNet18 and EfficientNet-B0 are compared using the same corrected split, preprocessing, seed, batch size, weight decay, and fine-tuning learning rate.
 
 ## Corrected data and preprocessing
 
@@ -15,9 +15,7 @@ All results in this document were regenerated after Part 2 corrected exact-conte
 | Test | 1,001 |
 | **Total** | **6,757** |
 
-The corrected split contains 30 classes and has no path or SHA-256 content overlap between train, validation, and test. Part 4 reused the checked-in split files without regeneration.
-
-Inputs are 224 x 224 RGB images. Training uses the shared augmentation pipeline; validation and test use deterministic preprocessing. ImageNet normalisation is applied:
+The corrected dataset contains 30 classes. Part 4 reuses the relocked Part 2 split files without regeneration. Training and validation use 224 x 224 RGB inputs, with the shared training augmentation and deterministic validation preprocessing. ImageNet normalisation is applied:
 
 ```text
 mean = [0.485, 0.456, 0.406]
@@ -26,7 +24,7 @@ std  = [0.229, 0.224, 0.225]
 
 ## Model implementation
 
-The model is created with `torchvision.models.ResNet18_Weights.DEFAULT`. The original 1,000-class fully connected layer is replaced by a 30-class layer.
+The model is initialised with `torchvision.models.ResNet18_Weights.DEFAULT`. Its original 1,000-class fully connected layer is replaced with a 30-class layer.
 
 The implementation supports three trainable scopes:
 
@@ -34,106 +32,101 @@ The implementation supports three trainable scopes:
 - `layer4`: train the final residual block and classifier.
 - `all`: fine-tune the complete network.
 
-The adapted model contains 11,191,902 parameters. The frozen-head stage has 15,390 trainable parameters; the Layer4 stage has 8,409,118. Frozen BatchNorm modules remain in evaluation mode during training so their running statistics do not change unintentionally.
+The adapted model contains 11,191,902 parameters. The frozen-head stage has 15,390 trainable parameters, while Layer4 fine-tuning has 8,409,118. Frozen BatchNorm modules remain in evaluation mode so their running statistics do not change unintentionally.
 
-## Controlled experiments
+## Isolated reselection run
 
-All experiments use seed 42, batch size 16, weight decay `1e-4`, 224 x 224 inputs, identical augmentation, ImageNet normalisation, and the same corrected splits. Only the trainable scope or Layer4 learning rate changes.
+All reselection stages use seed 42, batch size 16, weight decay `1e-4`, ImageNet normalisation, identical augmentation, and the corrected split files.
 
-| Experiment | Scope | Learning rate | Epochs | Best epoch | Validation accuracy | Validation Macro-F1 |
+| Stage | Scope | Learning rate | Epochs | Best epoch | Validation accuracy | Validation Macro-F1 |
 |---|---|---:|---:|---:|---:|---:|
-| Frozen head | Head only | 1e-3 | 5 | 4 | 89.73% | 89.67% |
-| Layer4 | Layer4 + head | 1e-4 | 10 | 10 | 96.77% | 96.69% |
-| Layer4 low LR | Layer4 + head | 3e-5 | 10 | 9 | **97.06%** | **97.03%** |
+| Frozen head | Head only | 1e-3 | 5 | 4 | 89.73% | Not calculated |
+| Layer4 fine-tuning | Layer4 + head | 3e-5 | 10 | 9 | **97.06%** | **97.03%** |
 
-Both Layer4 runs start from the best corrected-data frozen checkpoint. The `3e-5` checkpoint was selected using validation results before final test evaluation.
-
-## Locked final test result
-
-Selected checkpoint:
+The Layer4 stage starts from:
 
 ```text
-outputs/resnet18/layer4_lr3e5/best_model.pt
+reselection_20260727_run1/outputs/resnet18/frozen/best_model.pt
 ```
 
-The checkpoint was evaluated once on the corrected 1,001-image test split. No model or hyperparameter selection occurred after observing the result.
+Its best checkpoint is:
+
+```text
+reselection_20260727_run1/outputs/resnet18/layer4/best_model.pt
+```
+
+The final Layer4 validation metrics are:
 
 | Metric | Score |
 |---|---:|
-| Accuracy | **97.10%** |
-| Macro Precision | 97.31% |
-| Macro Recall | 97.24% |
-| Macro-F1 | **97.22%** |
-| Weighted Precision | 97.22% |
-| Weighted Recall | 97.10% |
-| Weighted-F1 | **97.11%** |
+| Accuracy | 97.06% |
+| Macro Precision | 97.41% |
+| Macro Recall | 96.90% |
+| Macro-F1 | 97.03% |
+| Weighted-F1 | 97.07% |
 | Top-5 Accuracy | 99.80% |
 
-Test accuracy is 0.04 percentage points above validation accuracy, and test Macro-F1 is 0.20 points above validation Macro-F1. The close results indicate stable held-out performance.
+## Role in final model selection
 
-## Per-class observations
+ResNet18 was treated as a candidate architecture, not as the automatically preferred final model. The fine-tuned checkpoint was compared with the independently trained EfficientNet-B0 checkpoint using validation metrics only.
 
-The five lowest test F1 scores are:
+| Model | Validation accuracy | Validation Macro-F1 | Total parameters |
+|---|---:|---:|---:|
+| ResNet18 | 97.06% | 97.03% | 11.19M |
+| EfficientNet-B0 | **97.16%** | **97.08%** | **4.05M** |
 
-| Species | Precision | Recall | F1 | Support |
-|---|---:|---:|---:|---:|
-| `ulmus_americana` | 87.10% | 84.38% | 85.71% | 32 |
-| `diospyros_virginiana` | 88.10% | 97.37% | 92.50% | 38 |
-| `ostrya_virginiana` | 86.11% | 100.00% | 92.54% | 31 |
-| `styrax_japonica` | 91.89% | 94.44% | 93.15% | 36 |
-| `ulmus_rubra` | 97.78% | 89.80% | 93.62% | 49 |
+EfficientNet-B0 was selected because it achieved slightly higher validation accuracy and Macro-F1 while using only 36.15% as many total parameters. ResNet18 was therefore not evaluated on the test set within the isolated reselection workflow.
 
-`ulmus_americana` is the weakest class and has both imperfect precision and recall, suggesting confusion in both directions. `ostrya_virginiana` has perfect recall but lower precision, so other species are sometimes assigned to it. These classes are suitable priorities for confusion-matrix inspection and explainability work.
+The 0.10 percentage-point validation difference is small and is not evidence of statistical significance. The selection is a deterministic decision under the declared single-split, single-seed protocol.
+
+## Training behaviour
+
+The fine-tuned ResNet18 reaches 99.30% training accuracy and 97.06% validation accuracy at epoch 9. Validation loss is also lowest at epoch 9. The training-validation gap indicates mild overfitting, but validation performance remains high and stable enough for comparison.
+
+![Reselection fine-tuning curves](report/figures/reselection_20260727_run1/reselection_finetuning_curves.png)
 
 ## Reproducibility
 
-```bash
-python part4_resnet18.py --config configs/resnet18_frozen.yaml
-python part4_resnet18.py --config configs/resnet18_layer4.yaml
-python part4_resnet18.py --config configs/resnet18_layer4_lr3e5.yaml
-```
-
-Validation evaluation is the default:
+The isolated ResNet18 stages are reproduced with:
 
 ```bash
-python part4_evaluate_resnet18.py
+python part4_resnet18.py \
+  --config reselection_20260727_run1/configs/resnet18_frozen.yaml
+
+python part4_resnet18.py \
+  --config reselection_20260727_run1/configs/resnet18_layer4.yaml
 ```
 
-The final test command is recorded only for provenance and must not be rerun for model selection:
+Validation evaluation:
 
 ```bash
-python part4_evaluate_resnet18.py --split test
+python part4_evaluate_resnet18.py \
+  --config reselection_20260727_run1/configs/resnet18_layer4.yaml \
+  --checkpoint reselection_20260727_run1/outputs/resnet18/layer4/best_model.pt \
+  --output-dir reselection_20260727_run1/outputs/resnet18/layer4/validation
 ```
 
-Saved results can be converted into tracked tables and figures without model or dataset evaluation:
+Tracked reselection tables and figures can be rebuilt from saved outputs without training or dataset evaluation:
 
 ```bash
-python part4_plot_results.py
+python part4_plot_reselection_results.py
 ```
 
-## Deliverables
+## Reselection deliverables
 
-- `src/models/resnet18.py`
-- `part4_resnet18.py`
-- `part4_evaluate_resnet18.py`
-- `part4_plot_results.py`
-- `configs/resnet18_frozen.yaml`
-- `configs/resnet18_layer4.yaml`
-- `configs/resnet18_layer4_lr3e5.yaml`
-- `report/tables/resnet18_experiments.csv`
-- `report/tables/resnet18_final_test_metrics.csv`
-- `report/tables/resnet18_test_per_class_metrics.csv`
-- `report/figures/resnet18/resnet18_training_curves.png`
-- `report/figures/resnet18/resnet18_validation_comparison.png`
-- `report/figures/resnet18/resnet18_test_per_class_f1.png`
+- `reselection_20260727_run1/configs/resnet18_frozen.yaml`
+- `reselection_20260727_run1/configs/resnet18_layer4.yaml`
+- `report/tables/reselection_resnet18_experiments.csv`
+- `report/tables/reselection_model_validation_comparison.csv`
+- `report/figures/reselection_20260727_run1/reselection_finetuning_curves.png`
+- `report/figures/reselection_20260727_run1/reselection_validation_model_comparison.png`
 
-Checkpoints and detailed predictions remain under `outputs/resnet18/` and are ignored by Git.
+Earlier ResNet18 test artifacts remain available for audit but are not used as the final reselection result.
 
-## Limitations and handoff
+## Limitations
 
-- Laboratory and field performance has not been reported separately.
-- Only a small controlled hyperparameter set was explored.
-- Runtime was not captured consistently and should not be compared retrospectively.
-- The final group analysis can add source-level metrics, confusion examples, and Grad-CAM visualisations without using the locked test set for additional tuning.
-
-This material must be integrated into the group's single final Project Notebook rather than submitted as a separate notebook.
+- Only one fixed split and one seed are used.
+- The validation difference between the two architectures is small.
+- Runtime and energy usage were not captured consistently.
+- Laboratory and field results are not reported separately.
+- The final test set must not be reused for further model or hyperparameter selection.

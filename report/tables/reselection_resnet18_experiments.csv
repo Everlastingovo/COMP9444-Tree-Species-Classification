@@ -1,0 +1,3 @@
+model,stage,trainable_scope,learning_rate,epochs,best_epoch,trainable_parameters,val_accuracy,val_macro_f1,selected_for_model_comparison
+ResNet18,Frozen head,head,0.001,5,4,15390,0.8972602739726028,,False
+ResNet18,Layer4 fine-tuning,layer4,3e-05,10,9,8409118,0.9706457925636007,0.9702637804953054,True

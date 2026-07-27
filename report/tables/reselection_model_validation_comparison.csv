@@ -1,0 +1,3 @@
+model,total_parameters,trainable_parameters,val_accuracy,val_macro_f1,val_weighted_f1,val_top5_accuracy,selected_final_model,selection_basis
+ResNet18,11191902,8409118,0.9706457925636007,0.9702637804953054,0.9707499531983265,0.9980430528375733,False,validation metrics
+EfficientNet-B0,4045978,1167822,0.9716242661448141,0.9707974143039351,0.9714776335282521,0.9990215264187867,True,validation metrics

@@ -24,9 +24,7 @@ from src.utils.seed import set_seed
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Evaluate the post-hoc EfficientNet-B0 extension on validation data only."
-        )
+        description="Evaluate an EfficientNet-B0 checkpoint on validation or test data."
     )
     parser.add_argument(
         "--config",
@@ -42,13 +40,19 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         default=None,
-        help="Defaults to <configured output directory>/validation.",
+        help="Defaults to <configured output directory>/<split>.",
+    )
+    parser.add_argument(
+        "--split",
+        choices=("validation", "test"),
+        default="validation",
+        help="Evaluation split. Defaults to validation.",
     )
     parser.add_argument(
         "--max-batches",
         type=int,
         default=None,
-        help="Limit validation batches for a smoke test.",
+        help="Limit evaluation batches for a smoke test.",
     )
     return parser.parse_args()
 
@@ -64,15 +68,16 @@ def evaluate(
     loader: DataLoader,
     device: torch.device,
     max_batches: int | None,
+    split: str,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return validation targets and class probabilities."""
+    """Return evaluation targets and class probabilities."""
     model.eval()
     targets: list[torch.Tensor] = []
     probabilities: list[torch.Tensor] = []
 
     with torch.inference_mode():
         for batch_index, (images, batch_targets) in enumerate(
-            tqdm(loader, desc="Validation", leave=False),
+            tqdm(loader, desc=split.title(), leave=False),
             start=1,
         ):
             images = images.to(device, non_blocking=True)
@@ -84,7 +89,7 @@ def evaluate(
                 break
 
     if not targets:
-        raise RuntimeError("Validation loader produced no batches.")
+        raise RuntimeError(f"{split.title()} loader produced no batches.")
 
     return torch.cat(targets).numpy(), torch.cat(probabilities).numpy()
 
@@ -196,7 +201,7 @@ def write_predictions(
     probabilities: np.ndarray,
     class_to_idx: dict[str, int],
 ) -> None:
-    """Write one prediction row per evaluated validation image."""
+    """Write one prediction row per evaluated image."""
     predictions = probabilities.argmax(axis=1)
     confidences = probabilities.max(axis=1)
     idx_to_class = {class_idx: name for name, class_idx in class_to_idx.items()}
@@ -237,7 +242,7 @@ def main() -> None:
     config = load_yaml(args.config)
     model_config = config["model"]
     training_config = config["training"]
-    output_dir = args.output_dir or Path(config["output"]["dir"]) / "validation"
+    output_dir = args.output_dir or Path(config["output"]["dir"]) / args.split
 
     if not args.checkpoint.is_file():
         raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
@@ -253,17 +258,22 @@ def main() -> None:
     if class_to_idx != expected_mapping:
         raise ValueError("Checkpoint class mapping does not match Part 2 metadata.")
 
-    validation_samples = load_samples_from_csv(Path("data/splits/val.csv"))
-    validation_dataset = LeafDataset(
-        samples=validation_samples,
+    split_path = (
+        Path("data/splits/val.csv")
+        if args.split == "validation"
+        else Path("data/splits/test.csv")
+    )
+    evaluation_samples = load_samples_from_csv(split_path)
+    evaluation_dataset = LeafDataset(
+        samples=evaluation_samples,
         class_to_idx=class_to_idx,
         image_size=model_config["image_size"],
         training=False,
         augment=False,
         normalization=model_config["normalization"],
     )
-    validation_loader = DataLoader(
-        validation_dataset,
+    evaluation_loader = DataLoader(
+        evaluation_dataset,
         batch_size=training_config["batch_size"],
         shuffle=False,
         num_workers=training_config["num_workers"],
@@ -277,18 +287,19 @@ def main() -> None:
     ).to(device)
     model.load_state_dict(checkpoint["model_state_dict"])
 
-    print("Evaluation split: validation")
-    print("Protocol: post-hoc validation-only extension")
+    print(f"Evaluation split: {args.split}")
+    print("Protocol: validation-based model selection followed by final test evaluation")
     print(f"Device: {device}")
     print(f"Checkpoint: {args.checkpoint}")
-    print(f"Validation images: {len(validation_samples)}")
+    print(f"Evaluation images: {len(evaluation_samples)}")
     print(f"Normalization: {model_config['normalization']}")
 
     targets, probabilities = evaluate(
         model,
-        validation_loader,
+        evaluation_loader,
         device,
         args.max_batches,
+        args.split,
     )
     metrics, per_class, matrix = calculate_metrics(
         targets,
@@ -297,12 +308,16 @@ def main() -> None:
     )
     metrics.update(
         {
-            "split": "validation",
-            "evaluation_scope": "validation_only",
+            "split": args.split,
+            "evaluation_scope": (
+                "validation_model_selection"
+                if args.split == "validation"
+                else "final_test"
+            ),
             "checkpoint": str(args.checkpoint),
             "config": str(args.config),
             "max_batches": args.max_batches,
-            "test_set_evaluated": False,
+            "test_set_evaluated": args.split == "test",
         }
     )
 
@@ -321,7 +336,7 @@ def main() -> None:
     )
     write_predictions(
         output_dir / "predictions.csv",
-        validation_samples[: targets.size],
+        evaluation_samples[: targets.size],
         targets,
         probabilities,
         class_to_idx,
@@ -329,7 +344,10 @@ def main() -> None:
 
     print(json.dumps(metrics, indent=2))
     print(f"Results saved to: {output_dir}")
-    print("Test set was not accessed or evaluated.")
+    if args.split == "test":
+        print("Final test evaluation completed.")
+    else:
+        print("Test set was not accessed or evaluated.")
 
 
 if __name__ == "__main__":

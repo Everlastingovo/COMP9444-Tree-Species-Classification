@@ -1,0 +1,19 @@
+experiment_name: reselection_20260727_resnet18_frozen
+
+model:
+  num_classes: 30
+  pretrained: true
+  trainable_scope: head
+  image_size: 224
+  normalization: imagenet
+
+training:
+  epochs: 5
+  batch_size: 16
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  seed: 42
+  num_workers: 0
+
+output:
+  dir: reselection_20260727_run1/outputs/resnet18/frozen
