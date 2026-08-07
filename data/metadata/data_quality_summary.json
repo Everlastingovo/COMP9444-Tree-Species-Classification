@@ -1,16 +1,8 @@
 {
-  "official_manifest_samples": 7395,
-  "unique_content_hashes": 6823,
-  "same_class_duplicates_removed": 400,
-  "conflicting_hash_groups_removed": 66,
-  "conflicting_images_removed": 238,
   "total_samples": 6757,
   "readable_images": 6757,
   "missing_or_invalid": 0,
   "field_images": 1649,
   "lab_images": 5108,
-  "class_count": 30,
-  "mode_counts": {
-    "RGB": 6757
-  }
+  "class_count": 30
 }
