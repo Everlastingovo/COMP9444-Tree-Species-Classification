@@ -1,0 +1,78 @@
+{
+  "models": {
+    "frozen": {
+      "strongest_confusion_pairs": [
+        {
+          "class_a": "diospyros_virginiana",
+          "class_b": "styrax_japonica",
+          "a_predicted_as_b": 5,
+          "b_predicted_as_a": 4,
+          "total_confusions": 9
+        },
+        {
+          "class_a": "ostrya_virginiana",
+          "class_b": "ulmus_rubra",
+          "a_predicted_as_b": 3,
+          "b_predicted_as_a": 6,
+          "total_confusions": 9
+        },
+        {
+          "class_a": "ulmus_pumila",
+          "class_b": "ulmus_rubra",
+          "a_predicted_as_b": 2,
+          "b_predicted_as_a": 5,
+          "total_confusions": 7
+        }
+      ],
+      "source_metrics": {
+        "lab": {
+          "images": 760,
+          "top1": 0.9303,
+          "macro_f1": 0.9349
+        },
+        "field": {
+          "images": 241,
+          "top1": 0.9129,
+          "macro_f1": 0.9006
+        }
+      }
+    },
+    "partial": {
+      "strongest_confusion_pairs": [
+        {
+          "class_a": "ulmus_pumila",
+          "class_b": "ulmus_rubra",
+          "a_predicted_as_b": 1,
+          "b_predicted_as_a": 8,
+          "total_confusions": 9
+        },
+        {
+          "class_a": "diospyros_virginiana",
+          "class_b": "styrax_japonica",
+          "a_predicted_as_b": 2,
+          "b_predicted_as_a": 3,
+          "total_confusions": 5
+        },
+        {
+          "class_a": "ostrya_virginiana",
+          "class_b": "ulmus_americana",
+          "a_predicted_as_b": 1,
+          "b_predicted_as_a": 4,
+          "total_confusions": 5
+        }
+      ],
+      "source_metrics": {
+        "lab": {
+          "images": 760,
+          "top1": 0.9303,
+          "macro_f1": 0.9301
+        },
+        "field": {
+          "images": 241,
+          "top1": 0.9627,
+          "macro_f1": 0.9644
+        }
+      }
+    }
+  }
+}

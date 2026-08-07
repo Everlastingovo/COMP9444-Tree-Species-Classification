@@ -1,0 +1,6 @@
+class_name,precision,recall,f1,support
+ostrya_virginiana,0.7222,0.8387,0.7761,31
+diospyros_virginiana,0.7561,0.8158,0.7848,38
+ulmus_rubra,0.8085,0.7755,0.7917,49
+styrax_japonica,0.7561,0.8611,0.8052,36
+ulmus_americana,0.96,0.75,0.8421,32

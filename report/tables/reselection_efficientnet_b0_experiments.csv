@@ -1,0 +1,3 @@
+model,stage,trainable_scope,learning_rate,epochs,best_epoch,trainable_parameters,val_accuracy,val_macro_f1,selected_for_model_comparison
+EfficientNet-B0,Frozen head,head,0.001,5,5,38430,0.949119373776908,,False
+EfficientNet-B0,Last-block fine-tuning,last_blocks,3e-05,10,9,1167822,0.9716242661448141,0.9707974143039351,True

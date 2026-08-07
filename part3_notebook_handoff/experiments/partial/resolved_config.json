@@ -1,0 +1,65 @@
+{
+  "settings": {
+    "zip_path": "data\\raw\\5061353\\leafsnap-dataset-30subset.zip",
+    "extract_root": "data\\raw\\5061353",
+    "data_root": "D:\\Desktop\\9444\\leafsnap-dataset-30subset 1\\leafsnap-dataset-30subset",
+    "images_root": null,
+    "image_source": "all",
+    "use_splits": true,
+    "split_dir": "data\\splits",
+    "no_augmentation": false,
+    "output_dir": "outputs\\mobilenetv2\\partial_seed42",
+    "model_name": "mobilenetv2_partial",
+    "pretrained": true,
+    "fine_tune_mode": "partial",
+    "unfreeze_blocks": 4,
+    "initial_checkpoint": "outputs\\mobilenetv2\\frozen_seed42\\best_mobilenetv2_frozen.pt",
+    "image_size": 224,
+    "normalization": "imagenet",
+    "epochs": 15,
+    "batch_size": 32,
+    "learning_rate": 0.0001,
+    "feature_learning_rate": 1e-05,
+    "classifier_learning_rate": 0.0001,
+    "weight_decay": 0.0001,
+    "val_ratio": 0.15,
+    "test_ratio": 0.15,
+    "seed": 42,
+    "num_workers": 4,
+    "max_batches": null,
+    "amp": true,
+    "early_stopping_patience": 5,
+    "selection_metric": "val_macro_f1",
+    "evaluate_test": false
+  },
+  "device": "cuda",
+  "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+  "amp_enabled": true,
+  "num_classes": 30,
+  "split_counts": {
+    "train": 4734,
+    "val": 1022
+  },
+  "total_parameters": 2262302,
+  "trainable_parameters": 1564510,
+  "initial_checkpoint_verified": true,
+  "initial_checkpoint_epoch": 15,
+  "trainable_feature_blocks": [
+    15,
+    16,
+    17,
+    18
+  ],
+  "optimizer_parameter_groups": [
+    {
+      "name": "features",
+      "parameter_count": 1526080,
+      "initial_learning_rate": 1e-05
+    },
+    {
+      "name": "classifier",
+      "parameter_count": 38430,
+      "initial_learning_rate": 0.0001
+    }
+  ]
+}

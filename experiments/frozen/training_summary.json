@@ -1,0 +1,7 @@
+{
+  "epochs_completed": 15,
+  "best_epoch": 15,
+  "trainable_parameters": 38430,
+  "elapsed_minutes": 9.0,
+  "max_gpu_memory_allocated_mb": 307.5
+}

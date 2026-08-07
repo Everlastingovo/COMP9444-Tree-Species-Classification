@@ -1,6 +1,89 @@
 {
+  "test_images": 1001,
+  "num_classes": 30,
+  "test_evaluated_once_per_checkpoint": true,
+  "checkpoint_selection_used_test": false,
   "models": {
     "frozen": {
+      "checkpoint_path": "outputs\\mobilenetv2\\frozen_seed42\\best_mobilenetv2_frozen.pt",
+      "checkpoint_sha256": "6c708cc6713f02732da137e9ac4396a939696c285b125b46df85213c8c421fd3",
+      "checkpoint_epoch": 15,
+      "metrics": {
+        "images": 1001,
+        "loss": 0.2869231260263479,
+        "top1": 0.926073926073926,
+        "top5": 0.998001998001998,
+        "macro_precision": 0.9331389655536133,
+        "macro_recall": 0.9318773015335287,
+        "macro_f1": 0.9310020184635535,
+        "classes_with_support": 30,
+        "inference_seconds": 19.972650599986082,
+        "average_inference_ms_per_image": 19.952697902083997
+      },
+      "source_metrics": {
+        "lab": {
+          "images": 760,
+          "loss": 0.2538666380079169,
+          "top1": 0.9302631578947368,
+          "top5": 1.0,
+          "macro_precision": 0.9347388124546808,
+          "macro_recall": 0.940327380952381,
+          "macro_f1": 0.9348808698831311,
+          "classes_with_support": 30
+        },
+        "field": {
+          "images": 241,
+          "loss": 0.3911676525574997,
+          "top1": 0.9128630705394191,
+          "top5": 0.991701244813278,
+          "macro_precision": 0.9177134858783199,
+          "macro_recall": 0.9067564957017291,
+          "macro_f1": 0.9005877980789905,
+          "classes_with_support": 29
+        }
+      },
+      "weakest_classes_by_f1": [
+        {
+          "class_idx": 19,
+          "class_name": "ostrya_virginiana",
+          "precision": 0.7222222222222222,
+          "recall": 0.8387096774193549,
+          "f1": 0.7761194029850746,
+          "support": 31
+        },
+        {
+          "class_idx": 12,
+          "class_name": "diospyros_virginiana",
+          "precision": 0.7560975609756098,
+          "recall": 0.8157894736842105,
+          "f1": 0.7848101265822786,
+          "support": 38
+        },
+        {
+          "class_idx": 29,
+          "class_name": "ulmus_rubra",
+          "precision": 0.8085106382978723,
+          "recall": 0.7755102040816326,
+          "f1": 0.7916666666666665,
+          "support": 49
+        },
+        {
+          "class_idx": 26,
+          "class_name": "styrax_japonica",
+          "precision": 0.7560975609756098,
+          "recall": 0.8611111111111112,
+          "f1": 0.8051948051948052,
+          "support": 36
+        },
+        {
+          "class_idx": 27,
+          "class_name": "ulmus_americana",
+          "precision": 0.96,
+          "recall": 0.75,
+          "f1": 0.8421052631578947,
+          "support": 32
+        }
+      ],
       "strongest_confusion_pairs": [
         {
           "class_a": "diospyros_virginiana",
@@ -22,22 +105,138 @@
           "a_predicted_as_b": 2,
           "b_predicted_as_a": 5,
           "total_confusions": 7
+        },
+        {
+          "class_a": "ostrya_virginiana",
+          "class_b": "ulmus_americana",
+          "a_predicted_as_b": 1,
+          "b_predicted_as_a": 4,
+          "total_confusions": 5
+        },
+        {
+          "class_a": "asimina_triloba",
+          "class_b": "diospyros_virginiana",
+          "a_predicted_as_b": 4,
+          "b_predicted_as_a": 0,
+          "total_confusions": 4
+        },
+        {
+          "class_a": "ulmus_americana",
+          "class_b": "ulmus_rubra",
+          "a_predicted_as_b": 4,
+          "b_predicted_as_a": 0,
+          "total_confusions": 4
+        },
+        {
+          "class_a": "acer_negundo",
+          "class_b": "acer_rubrum",
+          "a_predicted_as_b": 0,
+          "b_predicted_as_a": 2,
+          "total_confusions": 2
+        },
+        {
+          "class_a": "acer_rubrum",
+          "class_b": "broussonettia_papyrifera",
+          "a_predicted_as_b": 0,
+          "b_predicted_as_a": 2,
+          "total_confusions": 2
+        },
+        {
+          "class_a": "aesculus_pavi",
+          "class_b": "carya_cordiformis",
+          "a_predicted_as_b": 1,
+          "b_predicted_as_a": 1,
+          "total_confusions": 2
+        },
+        {
+          "class_a": "asimina_triloba",
+          "class_b": "chionanthus_virginicus",
+          "a_predicted_as_b": 1,
+          "b_predicted_as_a": 1,
+          "total_confusions": 2
         }
-      ],
+      ]
+    },
+    "partial": {
+      "checkpoint_path": "outputs\\mobilenetv2\\partial_seed42\\best_mobilenetv2_partial.pt",
+      "checkpoint_sha256": "9716e5f311abb5c828539f9ab7963c7444f6caf2cbc004e3c4c91838ddc9129a",
+      "checkpoint_epoch": 14,
+      "metrics": {
+        "images": 1001,
+        "loss": 0.18951480586331088,
+        "top1": 0.938061938061938,
+        "top5": 1.0,
+        "macro_precision": 0.9412544232857317,
+        "macro_recall": 0.9419556151152858,
+        "macro_f1": 0.9398686750293611,
+        "classes_with_support": 30,
+        "inference_seconds": 14.772166599985212,
+        "average_inference_ms_per_image": 14.757409190794418
+      },
       "source_metrics": {
         "lab": {
           "images": 760,
-          "top1": 0.9303,
-          "macro_f1": 0.9349
+          "loss": 0.18727783686236332,
+          "top1": 0.9302631578947368,
+          "top5": 1.0,
+          "macro_precision": 0.9309055114089754,
+          "macro_recall": 0.937070105820106,
+          "macro_f1": 0.9300710231601924,
+          "classes_with_support": 30
         },
         "field": {
           "images": 241,
-          "top1": 0.9129,
-          "macro_f1": 0.9006
+          "loss": 0.19656914794098787,
+          "top1": 0.9626556016597511,
+          "top5": 1.0,
+          "macro_precision": 0.9629468232916509,
+          "macro_recall": 0.9701580986063745,
+          "macro_f1": 0.9644466393651763,
+          "classes_with_support": 29
         }
-      }
-    },
-    "partial": {
+      },
+      "weakest_classes_by_f1": [
+        {
+          "class_idx": 12,
+          "class_name": "diospyros_virginiana",
+          "precision": 0.775,
+          "recall": 0.8157894736842105,
+          "f1": 0.7948717948717949,
+          "support": 38
+        },
+        {
+          "class_idx": 27,
+          "class_name": "ulmus_americana",
+          "precision": 0.9565217391304348,
+          "recall": 0.6875,
+          "f1": 0.8,
+          "support": 32
+        },
+        {
+          "class_idx": 29,
+          "class_name": "ulmus_rubra",
+          "precision": 0.8666666666666667,
+          "recall": 0.7959183673469388,
+          "f1": 0.8297872340425533,
+          "support": 49
+        },
+        {
+          "class_idx": 28,
+          "class_name": "ulmus_pumila",
+          "precision": 0.7567567567567568,
+          "recall": 0.9333333333333333,
+          "f1": 0.835820895522388,
+          "support": 30
+        },
+        {
+          "class_idx": 19,
+          "class_name": "ostrya_virginiana",
+          "precision": 0.8055555555555556,
+          "recall": 0.9354838709677419,
+          "f1": 0.8656716417910448,
+          "support": 31
+        }
+      ],
       "strongest_confusion_pairs": [
         {
           "class_a": "ulmus_pumila",
@@ -59,20 +258,67 @@
           "a_predicted_as_b": 1,
           "b_predicted_as_a": 4,
           "total_confusions": 5
-        }
-      ],
-      "source_metrics": {
-        "lab": {
-          "images": 760,
-          "top1": 0.9303,
-          "macro_f1": 0.9301
         },
-        "field": {
-          "images": 241,
-          "top1": 0.9627,
-          "macro_f1": 0.9644
+        {
+          "class_a": "chionanthus_virginicus",
+          "class_b": "diospyros_virginiana",
+          "a_predicted_as_b": 1,
+          "b_predicted_as_a": 3,
+          "total_confusions": 4
+        },
+        {
+          "class_a": "ulmus_americana",
+          "class_b": "ulmus_rubra",
+          "a_predicted_as_b": 4,
+          "b_predicted_as_a": 0,
+          "total_confusions": 4
+        },
+        {
+          "class_a": "asimina_triloba",
+          "class_b": "diospyros_virginiana",
+          "a_predicted_as_b": 3,
+          "b_predicted_as_a": 0,
+          "total_confusions": 3
+        },
+        {
+          "class_a": "chionanthus_virginicus",
+          "class_b": "maclura_pomifera",
+          "a_predicted_as_b": 2,
+          "b_predicted_as_a": 1,
+          "total_confusions": 3
+        },
+        {
+          "class_a": "fraxinus_nigra",
+          "class_b": "juglans_cinerea",
+          "a_predicted_as_b": 1,
+          "b_predicted_as_a": 2,
+          "total_confusions": 3
+        },
+        {
+          "class_a": "ostrya_virginiana",
+          "class_b": "ulmus_rubra",
+          "a_predicted_as_b": 1,
+          "b_predicted_as_a": 2,
+          "total_confusions": 3
+        },
+        {
+          "class_a": "carya_cordiformis",
+          "class_b": "fraxinus_nigra",
+          "a_predicted_as_b": 1,
+          "b_predicted_as_a": 1,
+          "total_confusions": 2
         }
-      }
+      ]
     }
+  },
+  "partial_minus_frozen": {
+    "loss": -0.09740832016303702,
+    "top1": 0.011988011988012026,
+    "top5": 0.0019980019980020414,
+    "macro_precision": 0.008115457732118414,
+    "macro_recall": 0.010078313581757148,
+    "macro_f1": 0.008866656565807651,
+    "inference_seconds": -5.20048400000087,
+    "average_inference_ms_per_image": -5.19528871128958
   }
 }

@@ -1,0 +1,2 @@
+num_samples,accuracy,macro_precision,macro_recall,macro_f1,weighted_precision,weighted_recall,weighted_f1,top5_accuracy,split,evaluation_scope,checkpoint,config,test_set_evaluated
+1001,0.978021978021978,0.9800992339331237,0.9796555047828749,0.9794260041627031,0.9790861190084442,0.978021978021978,0.9780852733679545,0.999000999000999,test,final_test,reselection_20260727_run1/outputs/efficientnet_b0/finetune/best_model.pt,reselection_20260727_run1/configs/efficientnet_b0_finetune.yaml,True

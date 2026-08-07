@@ -1,0 +1,3 @@
+row_type,model,validation_selected_epoch,val_loss,val_top1_percent,val_top5_percent,val_macro_f1_percent,test_loss,test_top1_percent,test_top5_percent,test_macro_f1_percent
+model,Frozen,15,0.2898,93.05,99.8,93.14,0.2869,92.61,99.8,93.1
+model,Partial,14,0.1754,94.91,99.9,95.03,0.1895,93.81,100.0,93.99

@@ -1,9 +1,18 @@
 {
+  "model": "mobilenetv2_partial",
+  "package_checkpoint": "checkpoints/best_mobilenetv2_partial.pt",
+  "repository_checkpoint": "outputs/mobilenetv2/partial_seed42/best_mobilenetv2_partial.pt",
+  "sha256": "9716e5f311abb5c828539f9ab7963c7444f6caf2cbc004e3c4c91838ddc9129a",
+  "size_bytes": 9301835,
+  "checkpoint_epoch": 14,
+  "selection_metric": "val_macro_f1",
+  "selection_score": 0.9503165956993412,
+  "strict_load_verified": true,
+  "output_classes": 30,
   "total_parameters": 2262302,
   "trainable_parameters": 1564510,
   "frozen_parameters": 697792,
-  "checkpoint_epoch": 14,
-  "selection_metric": "val_macro_f1",
-  "sha256": "checkpoint_not_in_repository",
-  "package_checkpoint": "checkpoints/best_mobilenetv2_partial.pt"
+  "trainable_feature_blocks": [15, 16, 17, 18],
+  "feature_learning_rate": 0.00001,
+  "classifier_learning_rate": 0.0001
 }
