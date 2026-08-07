@@ -1,0 +1,4 @@
+model,headline_accuracy,detailed_analysis_accuracy,brightness_clean_accuracy,headline_source
+Baseline-CustomCNN,0.8051948051948052,0.8041958041958042,0.8041958041958042,owner locked summary
+MobileNetV2-Partial,0.938061938061938,0.938061938061938,0.938061938061938,owner locked predictions
+ResNet18-Layer4,0.971028971028971,0.971028971028971,0.97002997002997,owner locked predictions
