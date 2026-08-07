@@ -1,0 +1,5 @@
+split,total_images,lab_images,field_images,class_count
+train,4734,3568,1166,30
+validation,1022,780,242,30
+test,1001,760,241,30
+all,6757,5108,1649,30

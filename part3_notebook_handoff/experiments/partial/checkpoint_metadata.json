@@ -1,0 +1,9 @@
+{
+  "total_parameters": 2262302,
+  "trainable_parameters": 1564510,
+  "frozen_parameters": 697792,
+  "checkpoint_epoch": 14,
+  "selection_metric": "val_macro_f1",
+  "sha256": "checkpoint_not_in_repository",
+  "package_checkpoint": "checkpoints/best_mobilenetv2_partial.pt"
+}
